@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@jack-yang/pi-quota",
+  "version": "0.1.0",
+  "description": "Quota monitor for the pi coding agent: Zhipu GLM Coding Plan (CN) 5h / weekly / MCP windows and GitHub Copilot AI credits, with run-out warnings and \"Quota available\" notices (port of opencode-quota)",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "quota",
+    "zhipu",
+    "glm",
+    "glm-coding-plan",
+    "bigmodel",
+    "copilot",
+    "github-copilot"
+  ],
+  "author": "Jack Yang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yangwudong/pi-quota.git"
+  },
+  "homepage": "https://github.com/yangwudong/pi-quota#readme",
+  "bugs": {
+    "url": "https://github.com/yangwudong/pi-quota/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "extensions",
+    "src",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ],
+    "image": "https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-widget.png"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  }
+}
