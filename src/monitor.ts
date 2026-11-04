@@ -23,13 +23,16 @@ import {
 import type { ProviderId, ProviderReport, ProviderResult } from "./core/types.ts";
 import { ALERT_WINDOWS, type AlertWindow, isAlertWindow } from "./core/windows.ts";
 import {
+  type DisplayLine,
   fullReport,
+  panelState,
   recoveryMessage,
+  settingsLine,
   statusLine,
-  type Tone,
   warningMessage,
   widgetLines,
 } from "./format.ts";
+import type { PanelPlacement } from "./layout.ts";
 import { fetchCopilotQuota } from "./providers/copilot.ts";
 import { fetchGlmCodingPlan } from "./providers/glm-coding-plan.ts";
 import {
@@ -39,10 +42,10 @@ import {
   LOCALES,
   type Messages,
   messages,
+  type PanelState,
   parseLocale,
 } from "./i18n.ts";
 
-export const WIDGET_KEY = "quota";
 export const REFRESH_INTERVAL_MS = 60_000;
 
 export type NotifyLevel = "info" | "warning" | "error";
@@ -50,9 +53,11 @@ export type NotifyLevel = "info" | "warning" | "error";
 /** The part of pi's `ctx.ui` the monitor uses. */
 export type MonitorUi = {
   notify(message: string, level: NotifyLevel): void;
-  setWidget(key: string, lines: string[] | undefined): void;
-  /** Colors one widget line; plain text without it. */
-  paint?(tone: Tone, text: string): string;
+  /**
+   * Shows the quota panel's lines where `placement` says (pi's TUI floats them at the top right;
+   * other modes put them above the editor), or removes the panel when `lines` is undefined.
+   */
+  showPanel(lines: readonly DisplayLine[] | undefined, placement: PanelPlacement): void;
   /** A pick from a list (`/quota config`, `/quota lang`); undefined when cancelled. */
   select?(title: string, options: string[]): Promise<string | undefined>;
 };
@@ -99,6 +104,18 @@ export function completeArguments(prefix: string, locale: Locale = DEFAULT_LOCAL
 }
 
 const WINDOW_ALIASES: Readonly<Record<string, AlertWindow>> = { "5h": "five-hour", wk: "weekly", week: "weekly" };
+
+/** The settings that make each panel state, in the order `/quota config` cycles them. */
+const PANEL_STATES: Readonly<Record<PanelState, Pick<QuotaConfig, "hidden" | "placement">>> = {
+  float: { hidden: false, placement: "float" },
+  inline: { hidden: false, placement: "inline" },
+  hidden: { hidden: true, placement: "float" },
+};
+const PANEL_CYCLE: readonly PanelState[] = ["float", "inline", "hidden"];
+
+function nextPanelState(state: PanelState): PanelState {
+  return PANEL_CYCLE[(PANEL_CYCLE.indexOf(state) + 1) % PANEL_CYCLE.length] ?? "float";
+}
 
 function parseWindow(word: string): AlertWindow | undefined {
   const name = word.trim().toLowerCase();
@@ -178,7 +195,7 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
   function render(): void {
     withUi((current) => {
       if (config.hidden || (!automatic && !reports)) {
-        current.setWidget(WIDGET_KEY, undefined);
+        current.showPanel(undefined, config.placement);
         return;
       }
       const lines = widgetLines(providers, reports, {
@@ -186,16 +203,8 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
         warnBelow: config.warnBelow,
         locale: config.language,
       });
-      // Nothing configured: no widget at all rather than an empty one.
-      if (lines.length === 0) {
-        current.setWidget(WIDGET_KEY, undefined);
-        return;
-      }
-      const paint = current.paint ?? ((_tone: Tone, text: string) => text);
-      current.setWidget(
-        WIDGET_KEY,
-        lines.map((line) => paint(line.tone, line.text)),
-      );
+      // Nothing configured: no panel at all rather than an empty one.
+      current.showPanel(lines.length === 0 ? undefined : lines, config.placement);
     });
   }
 
@@ -360,7 +369,10 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
             if (locale) updateConfig((settings) => ({ ...settings, language: locale }));
           },
         },
-        { label: w.configPanel(config.hidden), apply: () => updateConfig((s) => ({ ...s, hidden: !s.hidden })) },
+        {
+          label: w.configPanel(panelState(config)),
+          apply: () => updateConfig((settings) => ({ ...settings, ...PANEL_STATES[nextPanelState(panelState(settings))] })),
+        },
         ...ALERT_WINDOWS.map((window) => {
           const isMuted = config.muted.includes(window);
           return { label: w.configMute(window, isMuted), apply: () => setMuted(window, !isMuted) };
@@ -373,7 +385,7 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
       await apply();
     }
     const w = words();
-    say(`${w.configLanguage(LOCALE_NAMES[config.language])} · ${w.reportSettings(config)}`);
+    say(`${w.configLanguage(LOCALE_NAMES[config.language])} · ${settingsLine(config)}`);
   }
 
   async function report(): Promise<void> {

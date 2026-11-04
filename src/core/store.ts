@@ -11,6 +11,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DEFAULT_LOCALE, isLocale, type Locale } from "../i18n.ts";
+import { DEFAULT_PLACEMENT, isPlacement, type PanelPlacement } from "../layout.ts";
 import type { AlertState, WindowAlertState } from "./alerts.ts";
 import { isJsonObject, type JsonObject, type JsonValue, parseJson } from "./json.ts";
 import { safeErrorText } from "./redact.ts";
@@ -113,6 +114,8 @@ export type QuotaConfig = {
   language: Locale;
   /** `/quota hide`: no widget; checks and alerts go on. */
   hidden: boolean;
+  /** Where the panel goes in pi's TUI: floating at the top right, or above the editor. */
+  placement: PanelPlacement;
   /** `/quota mute <window>`: windows that send no warning and no "Quota available". */
   muted: AlertWindow[];
   /** Warn under this percent left. */
@@ -124,6 +127,7 @@ export type QuotaConfig = {
 export const DEFAULT_CONFIG: Readonly<QuotaConfig> = {
   language: DEFAULT_LOCALE,
   hidden: false,
+  placement: DEFAULT_PLACEMENT,
   muted: [],
   warnBelow: 20,
   recoverAt: 50,
@@ -147,6 +151,7 @@ export function parseConfig(raw: JsonValue | undefined): QuotaConfig {
   return {
     language: isLocale(value.language) ? value.language : DEFAULT_CONFIG.language,
     hidden: value.hidden === true,
+    placement: isPlacement(value.placement) ? value.placement : DEFAULT_CONFIG.placement,
     muted: [...new Set(muted)],
     warnBelow: percentSetting(value.warnBelow, DEFAULT_CONFIG.warnBelow),
     recoverAt: percentSetting(value.recoverAt, DEFAULT_CONFIG.recoverAt),

@@ -8,7 +8,7 @@ import { type Pace, paceOf } from "./core/pace.ts";
 import type { QuotaConfig } from "./core/store.ts";
 import type { ProviderId, ProviderReport, QuotaError, QuotaRow } from "./core/types.ts";
 import { WINDOWS } from "./core/windows.ts";
-import { type Locale, type Messages, messages } from "./i18n.ts";
+import { type Locale, type Messages, messages, type PanelState } from "./i18n.ts";
 
 export const PROVIDER_NAMES: Readonly<Record<ProviderId, string>> = {
   "zai-coding-cn": "Zhipu",
@@ -118,7 +118,16 @@ function isFast(pace: Pace | undefined): boolean {
 }
 
 export type Tone = "normal" | "warning" | "low" | "error";
-export type DisplayLine = { text: string; tone: Tone };
+/**
+ * One panel line: `name` is the provider name padded to its column (painted in the provider
+ * color), `rest` everything after it (painted by `tone`); `text` is the two together, unstyled.
+ */
+export type DisplayLine = { text: string; name: string; rest: string; tone: Tone };
+
+function displayLine(provider: ProviderId, rest: string, tone: Tone): DisplayLine {
+  const name = namePart(provider);
+  return { text: `${name}${rest}`, name, rest, tone };
+}
 
 function rowTone(row: QuotaRow, pace: Pace | undefined, warnBelow: number): Tone {
   if (row.percentRemaining < warnBelow) return "low";
@@ -132,11 +141,16 @@ function namePart(provider: ProviderId): string {
 
 /** "Zhipu   5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ 3h12m  ⚠ fast" */
 export function rowLine(row: QuotaRow, nowMs: number, locale: Locale): string {
+  return `${namePart(row.provider)}${rowRest(row, nowMs, locale)}`;
+}
+
+/** A window's line without the provider name: "5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ 3h12m". */
+function rowRest(row: QuotaRow, nowMs: number, locale: Locale): string {
   const window = (row.window ? WINDOWS[row.window].short : "").padEnd(WINDOW_WIDTH);
   const percent = `${displayPercent(row.percentRemaining)}%`.padStart(4);
   const reset = resetMark(formatResetCountdown(row.resetsAt, nowMs));
   const fast = isFast(paceOf(row, nowMs)) ? `  ${messages(locale).fastMark}` : "";
-  return `${namePart(row.provider)}${window}${bar(row.percentRemaining)} ${percent}${reset ? `  ${reset}` : ""}${fast}`;
+  return `${window}${bar(row.percentRemaining)} ${percent}${reset ? `  ${reset}` : ""}${fast}`;
 }
 
 /** At most this many lines per provider (5h, weekly, MCP). */
@@ -165,16 +179,15 @@ export function widgetLines(
   const m = messages(options.locale);
   return providers.flatMap((provider): DisplayLine[] => {
     const report = reports?.find((item) => item.provider === provider);
-    if (!report) return [{ text: `${namePart(provider)}${m.checking}`, tone: "normal" }];
+    if (!report) return [displayLine(provider, m.checking, "normal")];
     if (notInUse(report)) return [];
-    if (!report.ok) {
-      return [{ text: `${namePart(provider)}✗ ${shortReason(report.error, options.locale)}`, tone: "error" }];
-    }
-    if (report.rows.length === 0) return [{ text: `${namePart(provider)}— ${noteText(report, m)}`, tone: "normal" }];
-    return report.rows.slice(0, MAX_ROWS_PER_PROVIDER).map((row) => ({
-      text: rowLine(row, options.nowMs, options.locale),
-      tone: rowTone(row, paceOf(row, options.nowMs), options.warnBelow),
-    }));
+    if (!report.ok) return [displayLine(provider, `✗ ${shortReason(report.error, options.locale)}`, "error")];
+    if (report.rows.length === 0) return [displayLine(provider, `— ${noteText(report, m)}`, "normal")];
+    return report.rows
+      .slice(0, MAX_ROWS_PER_PROVIDER)
+      .map((row) =>
+        displayLine(provider, rowRest(row, options.nowMs, options.locale), rowTone(row, paceOf(row, options.nowMs), options.warnBelow)),
+      );
   });
 }
 
@@ -290,15 +303,23 @@ export function fullReport(
     if (report.rows.length === 0) lines.push(`  ${noteText(report, m)}`);
     for (const row of report.rows) lines.push(...reportRow(row, nowMs, config, m));
   }
-  lines.push(
-    m.reportSettings({
-      warnBelow: config.warnBelow,
-      recoverAt: config.recoverAt,
-      muted: config.muted,
-      hidden: config.hidden,
-    }),
-  );
+  lines.push(settingsLine(config));
   return lines;
+}
+
+/** The panel as the settings name it: floating, above the editor, or hidden. */
+export function panelState(config: QuotaConfig): PanelState {
+  return config.hidden ? "hidden" : config.placement;
+}
+
+/** The alert settings in one line: thresholds, muted windows, the panel. */
+export function settingsLine(config: QuotaConfig): string {
+  return messages(config.language).reportSettings({
+    warnBelow: config.warnBelow,
+    recoverAt: config.recoverAt,
+    muted: config.muted,
+    panel: panelState(config),
+  });
 }
 
 function alertName(row: QuotaRow, m: Messages): string {

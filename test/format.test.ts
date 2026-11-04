@@ -137,11 +137,13 @@ describe("widget", () => {
       { provider: "github-copilot", ok: true, rows: [], note: { kind: "unlimited", label: "AI credits" }, checkedAtMs: NOW },
     ];
     assert.deepEqual(widgetLines(both, answers, { nowMs: NOW, warnBelow: 20, locale: "en" }), [
-      { text: "Zhipu   ✗ auth", tone: "error" },
-      { text: "Copilot — AI credits: unlimited", tone: "normal" },
+      { text: "Zhipu   ✗ auth", name: "Zhipu   ", rest: "✗ auth", tone: "error" },
+      { text: "Copilot — AI credits: unlimited", name: "Copilot ", rest: "— AI credits: unlimited", tone: "normal" },
     ]);
     assert.deepEqual(widgetLines(both, answers, { nowMs: NOW, warnBelow: 20, locale: "zh" })[1], {
       text: "Copilot — AI credits 不限量",
+      name: "Copilot ",
+      rest: "— AI credits 不限量",
       tone: "normal",
     });
     assert.deepEqual(
@@ -226,7 +228,7 @@ describe("full report", () => {
     assert.ok(lines.some((line) => line.includes("0/1,000")));
     assert.ok(lines.some((line) => line.startsWith("GitHub Copilot · business")));
     assert.ok(lines.some((line) => line.includes("2,404/25,000 AI credits")));
-    assert.equal(lines.at(-1), 'Alerts: warn under 20% · "Quota available" back at ≥50% · muted: none · panel: shown');
+    assert.equal(lines.at(-1), 'Alerts: warn under 20% · "Quota available" back at ≥50% · muted: none · panel: floating');
   });
 
   it("is the same report in Chinese", () => {
@@ -235,7 +237,8 @@ describe("full report", () => {
     assert.equal(lines[0], `pi-quota 配额报告 · ${clockTime(NOW, NOW)}`);
     assert.equal(lines[2], `  5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ ${fiveHourReset}（3h 12m）`);
     assert.equal(lines[3], "        节奏：正常（均匀线 64%）");
-    assert.equal(lines.at(-1), "提醒：<20% 警告 · 回到 ≥50% 发 Quota available · 静音：无 · 面板：显示");
+    assert.equal(lines.at(-1), "提醒：<20% 警告 · 回到 ≥50% 发 Quota available · 静音：无 · 面板：悬浮（右上）");
+    assert.match(fullReport(both, reports, { nowMs: NOW, config: { ...ZH, placement: "inline" } }).at(-1) ?? "", /面板：编辑器上方$/);
   });
 
   it("shows an error with the provider's words and the hint, and muted windows", () => {

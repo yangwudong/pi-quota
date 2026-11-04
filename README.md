@@ -4,7 +4,7 @@ English | [中文](./README.zh-CN.md)
 
 [![npm version](https://img.shields.io/npm/v/@jack-yang/pi-quota)](https://www.npmjs.com/package/@jack-yang/pi-quota) [![license](https://img.shields.io/npm/l/@jack-yang/pi-quota)](./LICENSE) [![CI](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml/badge.svg)](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml) ![pi](https://img.shields.io/badge/pi-%E2%89%A5%201.5.0-blue)
 
-A [pi coding agent](https://pi.dev) extension that keeps an eye on your subscription quota: the **Zhipu GLM Coding Plan (China, `zai-coding-cn`)** 5-hour, weekly and monthly MCP windows, and **GitHub Copilot** AI credits. The quota stays on screen above the editor; when a window is about to run out it warns you, with the run-out time at your current pace; when a window resets it tells you "Quota available".
+A [pi coding agent](https://pi.dev) extension that keeps an eye on your subscription quota: the **Zhipu GLM Coding Plan (China, `zai-coding-cn`)** 5-hour, weekly and monthly MCP windows, and **GitHub Copilot** AI credits. The quota floats at the top right of the screen, out of the way of the chat and the editor; when a window is about to run out it warns you, with the run-out time at your current pace; when a window resets it tells you "Quota available".
 
 > Subscription quota is a hard limit: the extension watches it for you and speaks up at the right moment, instead of waiting for you to remember to check.
 
@@ -12,18 +12,20 @@ Ported from the opencode plugin [opencode-quota](https://github.com/slkiser/open
 
 ## What it looks like
 
-The resident panel above the editor, with a warning (example data):
+The quota panel floats at the top right, over the chat, with a warning (example data). It takes no rows: the chat and the editor stay where they are:
 
-![Quota panel above the editor: a warning for the Zhipu 5h window at 18% with the run-out time, then the 5h, weekly, MCP and Copilot rows](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-widget.png)
+![Quota panel floating at the top right: the 5h, weekly, MCP and Copilot rows with provider names in blue; below, a warning for the Zhipu 5h window and the editor](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-widget.png)
 
 `/quota`, the full report (shown to you only, never sent to the model):
 
-![/quota full report: every window with its usage, reset time and pace analysis](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-report.png)
+![/quota full report: every window with its usage, reset time and pace analysis, under the floating panel](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-report.png)
 
 `/quota config`, the settings menu:
 
-![/quota config: language, quota panel, alerts for the 5h and weekly windows](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-config.png)
+![/quota config: language, quota panel (floating, above the editor or hidden), alerts for the 5h and weekly windows](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-config.png)
 
+- **Floating** by default: the panel sits at the top right, where the chat leaves the most room, and takes no rows and no keyboard input. When the terminal is too narrow to keep 40 columns of chat beside it (or too short), it moves above the editor until there is room again. `/quota config` → *Quota panel* switches between floating, above the editor and hidden.
+- Provider names (`Zhipu`, `Copilot`) are blue (`#008AFA`); in terminals without truecolor pi uses the nearest of its 256 colors.
 - Up to 3 rows per provider: 5-hour window (`5h`), weekly window (`wk`), monthly MCP allowance (`mcp`). Windows your plan doesn't have are not shown.
 - Each row: a 10-cell bar, the percent left, and `⏳` with the time until the reset (`14m` / `3h12m` / `4d`).
 - `⚠ fast` at the end of a row when the window is used faster than even use (once more than 10% of it has passed).
@@ -70,7 +72,7 @@ Type `/quota ` to see every argument with a description.
 | `/quota` | Full report: each window's percent left, usage, reset time (local time and countdown), pace analysis and the alert settings |
 | `/quota status` | One-line summary, tightest window first (a failing provider comes first) |
 | `/quota refresh` | Drop the cache and check again now |
-| `/quota config` | Settings menu: language, quota panel, alerts per window; each pick applies at once |
+| `/quota config` | Settings menu: language, quota panel (floating / above the editor / hidden), alerts per window; each pick applies at once |
 | `/quota lang [en\|zh]` | Set the language, or pick it from a list |
 | `/quota mute <five-hour\|weekly>` | Mute a window: no more warnings or "Quota available" for it (`5h` / `wk` work too) |
 | `/quota unmute <five-hour\|weekly>` | Unmute it |
@@ -92,6 +94,7 @@ Type `/quota ` to see every argument with a description.
 ```json
 {
   "language": "en",
+  "placement": "float",
   "hidden": false,
   "muted": ["five-hour"],
   "warnBelow": 20,
@@ -102,6 +105,7 @@ Type `/quota ` to see every argument with a description.
 | Field | Default | Meaning |
 |---|---|---|
 | `language` | `"en"` | `"en"` or `"zh"` (`/quota lang`, `/quota config`) |
+| `placement` | `"float"` | `"float"`: at the top right, over the chat; `"inline"`: above the editor (`/quota config`) |
 | `hidden` | `false` | Whether the panel is hidden (`/quota hide\|show`) |
 | `muted` | `[]` | Muted windows (`/quota mute\|unmute`) |
 | `warnBelow` | `20` | Warn when less than this percent is left, in (0, 100] |
@@ -133,6 +137,7 @@ Not ported: the 20+ other providers, the Web / Desktop / GUI surfaces, the setti
 ## Known limitations
 
 - Copilot's monthly credits and the MCP allowance are shown but never alert.
+- The floating panel covers the right end of chat lines that reach it (it is drawn over the chat, not beside it); switch to *above the editor* in `/quota config` if you prefer it out of the chat entirely. It floats only in pi's fullscreen mode (the default); in `--tui-mode regular` the panel stays above the editor.
 - Copilot and MCP windows have no fixed length, so they have no pace; Zhipu does not report a window start either, so it is taken as "reset time − window length".
 - Sent alerts are remembered in one small file without a lock: when several pi sessions check at the very same moment, a warning may very rarely repeat once.
 - Z.ai global (`zai`) is not supported.

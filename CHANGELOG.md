@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-11-04
+
+- **The quota panel floats at the top right** by default, over the chat: it takes no rows and
+  no keyboard input, so the chat and the editor keep their place. When the terminal is too narrow
+  to keep 40 columns of chat beside it (or too short), and in pi's regular TUI mode, it goes back
+  above the editor. `/quota config` → *Quota panel* cycles floating / above the editor / hidden;
+  the choice is saved as `placement` in `~/.pi/agent/pi-quota/config.json`. To keep the 0.2
+  layout, pick "above the editor" once.
+- Provider names (`Zhipu`, `Copilot`) are blue, `#008AFA` (the nearest 256 color in terminals
+  without truecolor).
+
 ## [0.2.0] - 2026-11-04
 
 - **English by default**, Simplified Chinese on request: everything pi-quota shows (panel,

@@ -54,12 +54,15 @@ export type WarningParts = {
   window: AlertWindow;
 };
 
+/** The quota panel as the settings show it: floating, above the editor, or hidden. */
+export type PanelState = "float" | "inline" | "hidden";
+
 /** The parts of the alert-settings line of the full report. */
 export type SettingsParts = {
   warnBelow: number;
   recoverAt: number;
   muted: readonly string[];
-  hidden: boolean;
+  panel: PanelState;
 };
 
 export type Messages = {
@@ -105,13 +108,18 @@ export type Messages = {
   languageTitle: string;
   configTitle: string;
   configLanguage(name: string): string;
-  configPanel(hidden: boolean): string;
+  /** The panel's state in words: "floating", "above the editor", "hidden". */
+  panelStates: Readonly<Record<PanelState, string>>;
+  configPanel(panel: PanelState): string;
   configMute(window: AlertWindow, muted: boolean): string;
   configDone: string;
   /** The `/` menu: the command's own line, and one per argument. */
   commandDescription: string;
   argument: Readonly<Record<string, string>>;
 };
+
+const EN_PANEL: Readonly<Record<PanelState, string>> = { float: "floating", inline: "above the editor", hidden: "hidden" };
+const ZH_PANEL: Readonly<Record<PanelState, string>> = { float: "悬浮（右上）", inline: "编辑器上方", hidden: "隐藏" };
 
 const en: Messages = {
   checking: "… checking",
@@ -143,7 +151,7 @@ const en: Messages = {
   reportMuted: "[muted]",
   resetAt: (time, countdown) => `${time} (${countdown})`,
   reportSettings: (p) =>
-    `Alerts: warn under ${p.warnBelow}% · "Quota available" back at ≥${p.recoverAt}% · muted: ${p.muted.length > 0 ? p.muted.join(", ") : "none"} · panel: ${p.hidden ? "hidden" : "shown"}`,
+    `Alerts: warn under ${p.warnBelow}% · "Quota available" back at ≥${p.recoverAt}% · muted: ${p.muted.length > 0 ? p.muted.join(", ") : "none"} · panel: ${EN_PANEL[p.panel]}`,
   paceSpare: (even) => `Pace: spare (even use ${even}%)`,
   paceOnTrack: (even) => `Pace: on track (even use ${even}%)`,
   paceEarly: (even) => `Pace: fast, too early in the window to forecast (even use ${even}%)`,
@@ -168,7 +176,8 @@ const en: Messages = {
   languageTitle: "pi-quota language",
   configTitle: "pi-quota settings",
   configLanguage: (name) => `Language: ${name}`,
-  configPanel: (hidden) => `Quota panel: ${hidden ? "hidden" : "shown"}`,
+  panelStates: EN_PANEL,
+  configPanel: (panel) => `Quota panel: ${EN_PANEL[panel]}`,
   configMute: (window, isMuted) => `Alerts for ${window}: ${isMuted ? "muted" : "on"}`,
   configDone: "Done",
   commandDescription: "Quota of Zhipu GLM Coding Plan and GitHub Copilot: report, status, settings",
@@ -216,7 +225,7 @@ const zh: Messages = {
   reportMuted: "[静音]",
   resetAt: (time, countdown) => `${time}（${countdown}）`,
   reportSettings: (p) =>
-    `提醒：<${p.warnBelow}% 警告 · 回到 ≥${p.recoverAt}% 发 Quota available · 静音：${p.muted.length > 0 ? p.muted.join(", ") : "无"} · 面板：${p.hidden ? "隐藏" : "显示"}`,
+    `提醒：<${p.warnBelow}% 警告 · 回到 ≥${p.recoverAt}% 发 Quota available · 静音：${p.muted.length > 0 ? p.muted.join(", ") : "无"} · 面板：${ZH_PANEL[p.panel]}`,
   paceSpare: (even) => `节奏：有富余（均匀线 ${even}%）`,
   paceOnTrack: (even) => `节奏：正常（均匀线 ${even}%）`,
   paceEarly: (even) => `节奏：偏快，窗口刚开始暂不预测（均匀线 ${even}%）`,
@@ -241,7 +250,8 @@ const zh: Messages = {
   languageTitle: "pi-quota 语言",
   configTitle: "pi-quota 设置",
   configLanguage: (name) => `语言：${name}`,
-  configPanel: (hidden) => `配额面板：${hidden ? "隐藏" : "显示"}`,
+  panelStates: ZH_PANEL,
+  configPanel: (panel) => `配额面板：${ZH_PANEL[panel]}`,
   configMute: (window, isMuted) => `${window} 提醒：${isMuted ? "已静音" : "开启"}`,
   configDone: "完成",
   commandDescription: "智谱 GLM Coding Plan 与 GitHub Copilot 配额：报告、摘要、设置",

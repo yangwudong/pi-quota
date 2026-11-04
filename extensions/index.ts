@@ -1,30 +1,23 @@
 /**
- * pi-quota: watches the Zhipu GLM Coding Plan (CN) and GitHub Copilot quotas, shows them above the
- * editor, warns before a 5-hour or weekly window runs out, and says "Quota available" when it is
- * back. Everything reaches the user through `ctx.ui` (widget / notify); nothing is a tool result
- * or a message, so quota never enters the model's context.
+ * pi-quota: watches the Zhipu GLM Coding Plan (CN) and GitHub Copilot quotas, shows them in a
+ * panel (by default a card floating at the top right, see ./quota-panel.ts), warns before a
+ * 5-hour or weekly window runs out, and says "Quota available" when it is back. Everything
+ * reaches the user through `ctx.ui` (widget / overlay / notify); nothing is a tool result or a
+ * message, so quota never enters the model's context.
  *
  * This file only wires pi's events to the monitor (`src/monitor.ts`).
  */
-import type { ExtensionAPI, ExtensionContext, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveAgentDir } from "../src/auth.ts";
 import { loadConfig, quotaPaths } from "../src/core/store.ts";
-import type { Tone } from "../src/format.ts";
 import { messages } from "../src/i18n.ts";
 import { completeArguments, createMonitor, defaultFetchers, type MonitorUi } from "../src/monitor.ts";
+import { createPanelHost, type PanelHost } from "./quota-panel.ts";
 
-const TONE_COLORS: Readonly<Record<Tone, ThemeColor>> = {
-  normal: "muted",
-  warning: "warning",
-  low: "error",
-  error: "error",
-};
-
-function monitorUi(ctx: ExtensionContext): MonitorUi {
+function monitorUi(ctx: ExtensionContext, panel: PanelHost): MonitorUi {
   return {
     notify: (message, level) => ctx.ui.notify(message, level),
-    setWidget: (key, lines) => ctx.ui.setWidget(key, lines),
-    paint: (tone, text) => ctx.ui.theme.fg(TONE_COLORS[tone], text),
+    showPanel: (lines, placement) => panel.show(ctx, lines, placement),
     select: (title, options) => ctx.ui.select(title, options),
   };
 }
@@ -35,6 +28,8 @@ export default function piQuota(pi: ExtensionAPI): void {
 
   const agentDir = resolveAgentDir();
   const paths = quotaPaths(agentDir);
+  // One panel per extension instance: it follows the panel pi shows across events.
+  const panel = createPanelHost();
   const monitor = createMonitor({
     fetchers: defaultFetchers(() => ({ env: process.env, agentDir })),
     paths,
@@ -44,11 +39,11 @@ export default function piQuota(pi: ExtensionAPI): void {
 
   // Timers and requests start with the session, never in the factory (pi may load it without one).
   pi.on("session_start", (_event, ctx) => {
-    if (ctx.hasUI) monitor.start(monitorUi(ctx));
+    if (ctx.hasUI) monitor.start(monitorUi(ctx, panel));
   });
   // pi awaits turn_end handlers before the next turn: start the check, never wait for it.
   pi.on("turn_end", (_event, ctx) => {
-    if (ctx.hasUI) monitor.onTurnEnd(monitorUi(ctx));
+    if (ctx.hasUI) monitor.onTurnEnd(monitorUi(ctx, panel));
   });
   pi.on("session_shutdown", () => {
     monitor.stop();
@@ -66,7 +61,7 @@ export default function piQuota(pi: ExtensionAPI): void {
       })) ?? null,
     handler: async (args, ctx) => {
       if (!ctx.hasUI) return;
-      await monitor.command(args, monitorUi(ctx));
+      await monitor.command(args, monitorUi(ctx, panel));
     },
   });
 }

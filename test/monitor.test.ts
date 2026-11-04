@@ -14,8 +14,9 @@ import {
   type MonitorUi,
   REFRESH_INTERVAL_MS,
   type SetTimer,
-  WIDGET_KEY,
 } from "../src/monitor.ts";
+import type { DisplayLine } from "../src/format.ts";
+import type { PanelPlacement } from "../src/layout.ts";
 
 const NOW = Date.parse("2026-11-03T12:00:00.000Z");
 const MINUTE = 60_000;
@@ -26,13 +27,17 @@ const ZH = messages("zh");
 /** A fake pi UI; `picks` answers its select() calls in order (undefined: the user cancels). */
 function fakeUi(picks: Array<string | undefined> | null = null) {
   const notes: Array<{ level: string; message: string }> = [];
+  /** Each panel update as its lines' plain text (undefined: no panel). */
   const widgets: Array<string[] | undefined> = [];
+  const placements: PanelPlacement[] = [];
+  const panels: Array<readonly DisplayLine[] | undefined> = [];
   const menus: Array<{ title: string; options: string[] }> = [];
   const ui: MonitorUi = {
     notify: (message, level) => notes.push({ level, message }),
-    setWidget: (key, lines) => {
-      assert.equal(key, WIDGET_KEY);
-      widgets.push(lines);
+    showPanel: (lines, placement) => {
+      panels.push(lines);
+      widgets.push(lines?.map((line) => line.text));
+      placements.push(placement);
     },
     ...(picks
       ? {
@@ -49,6 +54,8 @@ function fakeUi(picks: Array<string | undefined> | null = null) {
     ui,
     notes,
     widgets,
+    placements,
+    panels,
     menus,
     widget: () => widgets.at(-1),
     warnings: () => notes.filter((n) => n.level === "warning"),
@@ -394,7 +401,7 @@ describe("monitor: /quota config", () => {
     const view = fakeUi([
       EN.configLanguage("English"), // → language picker
       "简体中文",
-      ZH.configPanel(false), // the menu is Chinese now: hide the panel
+      ZH.configPanel("float"), // the menu is Chinese now: floating → above the editor
       ZH.configMute("weekly", false), // mute weekly
       ZH.configDone,
     ]);
@@ -408,18 +415,48 @@ describe("monitor: /quota config", () => {
     );
     assert.deepEqual(view.menus[0]?.options, [
       "Language: English",
-      "Quota panel: shown",
+      "Quota panel: floating",
       "Alerts for five-hour: on",
       "Alerts for weekly: on",
       "Done",
     ]);
-    assert.deepEqual(view.menus.at(-1)?.options, ["语言：简体中文", "配额面板：隐藏", "five-hour 提醒：开启", "weekly 提醒：已静音", "完成"]);
+    assert.deepEqual(view.menus.at(-1)?.options, [
+      "语言：简体中文",
+      "配额面板：编辑器上方",
+      "five-hour 提醒：开启",
+      "weekly 提醒：已静音",
+      "完成",
+    ]);
     assert.deepEqual(
-      { language: savedConfig().language, hidden: savedConfig().hidden, muted: savedConfig().muted },
-      { language: "zh", hidden: true, muted: ["weekly"] },
+      { language: savedConfig().language, placement: savedConfig().placement, hidden: savedConfig().hidden, muted: savedConfig().muted },
+      { language: "zh", placement: "inline", hidden: false, muted: ["weekly"] },
     );
-    assert.equal(view.widget(), undefined);
-    assert.match(view.notes.at(-1)?.message ?? "", /^语言：简体中文 · 提醒：<20% 警告 .* 静音：weekly · 面板：隐藏$/);
+    // The panel moved at once: the UI was told to put it above the editor.
+    assert.equal(view.placements.at(-1), "inline");
+    assert.equal(view.widget()?.length, 2);
+    assert.match(view.notes.at(-1)?.message ?? "", /^语言：简体中文 · 提醒：<20% 警告 .* 静音：weekly · 面板：编辑器上方$/);
+  });
+
+  it("cycles the panel: floating → above the editor → hidden → floating", async () => {
+    const { monitor, savedConfig } = setup();
+    const view = fakeUi([
+      EN.configPanel("float"),
+      EN.configPanel("inline"),
+      EN.configPanel("hidden"),
+      EN.configDone,
+    ]);
+    monitor.start(view.ui);
+    await monitor.idle();
+    assert.equal(view.placements.at(-1), "float");
+    await monitor.command("config", view.ui);
+    assert.deepEqual(
+      view.menus.map((menu) => menu.options[1]),
+      ["Quota panel: floating", "Quota panel: above the editor", "Quota panel: hidden", "Quota panel: floating"],
+    );
+    assert.deepEqual({ placement: savedConfig().placement, hidden: savedConfig().hidden }, { placement: "float", hidden: false });
+    // While hidden there was no panel; floating again, it is back.
+    assert.ok(view.widgets.includes(undefined));
+    assert.equal(view.widget()?.length, 2);
   });
 
   it("closes on cancel and still sums up the settings", async () => {
