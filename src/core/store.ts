@@ -114,7 +114,7 @@ export type QuotaConfig = {
   language: Locale;
   /** `/quota hide`: no widget; checks and alerts go on. */
   hidden: boolean;
-  /** Where the panel goes in pi's TUI: floating at the top right, or above the editor. */
+  /** Where the panel goes in pi's TUI: floating at the bottom right of the chat, or above the editor. */
   placement: PanelPlacement;
   /** `/quota mute <window>`: windows that send no warning and no "Quota available". */
   muted: AlertWindow[];

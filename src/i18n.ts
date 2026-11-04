@@ -119,7 +119,7 @@ export type Messages = {
 };
 
 const EN_PANEL: Readonly<Record<PanelState, string>> = { float: "floating", inline: "above the editor", hidden: "hidden" };
-const ZH_PANEL: Readonly<Record<PanelState, string>> = { float: "悬浮（右上）", inline: "编辑器上方", hidden: "隐藏" };
+const ZH_PANEL: Readonly<Record<PanelState, string>> = { float: "悬浮（右下）", inline: "编辑器上方", hidden: "隐藏" };
 
 const en: Messages = {
   checking: "… checking",

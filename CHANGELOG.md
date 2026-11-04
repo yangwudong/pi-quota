@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] - 2026-11-04
+
+- **The floating card sits at the bottom right, just above the editor**, instead of the top right:
+  its last row is the chat's last row, so it moves up with the editor when the input grows or a
+  status line or a menu opens, and steps up one more row while pi shows "Jump to latest message"
+  there. It still takes no rows. With pi's scrollbar set to always, it leaves the scrollbar its
+  column.
+- Fixed: while the card floated, selecting text with the mouse copied the card's text along with
+  the chat, and the chat's scrollbar could not be dragged. A copy now holds the chat's text, also
+  under the card.
+- Fixed: with the panel above the editor, pi's `/settings` could not switch the TUI mode ("Close
+  active overlays before changing TUI mode"). While the card floats, pi still refuses; see the
+  known limitations in the README.
+
 ## [0.3.0] - 2026-11-04
 
 - **The quota panel floats at the top right** by default, over the chat: it takes no rows and

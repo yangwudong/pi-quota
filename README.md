@@ -4,7 +4,7 @@ English | [中文](./README.zh-CN.md)
 
 [![npm version](https://img.shields.io/npm/v/@jack-yang/pi-quota)](https://www.npmjs.com/package/@jack-yang/pi-quota) [![license](https://img.shields.io/npm/l/@jack-yang/pi-quota)](./LICENSE) [![CI](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml/badge.svg)](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml) ![pi](https://img.shields.io/badge/pi-%E2%89%A5%201.5.0-blue)
 
-A [pi coding agent](https://pi.dev) extension that keeps an eye on your subscription quota: the **Zhipu GLM Coding Plan (China, `zai-coding-cn`)** 5-hour, weekly and monthly MCP windows, and **GitHub Copilot** AI credits. The quota floats at the top right of the screen, out of the way of the chat and the editor; when a window is about to run out it warns you, with the run-out time at your current pace; when a window resets it tells you "Quota available".
+A [pi coding agent](https://pi.dev) extension that keeps an eye on your subscription quota: the **Zhipu GLM Coding Plan (China, `zai-coding-cn`)** 5-hour, weekly and monthly MCP windows, and **GitHub Copilot** AI credits. The quota floats at the bottom right of the chat, just above the editor, without taking a row; when a window is about to run out it warns you, with the run-out time at your current pace; when a window resets it tells you "Quota available".
 
 > Subscription quota is a hard limit: the extension watches it for you and speaks up at the right moment, instead of waiting for you to remember to check.
 
@@ -12,9 +12,9 @@ Ported from the opencode plugin [opencode-quota](https://github.com/slkiser/open
 
 ## What it looks like
 
-The quota panel floats at the top right, over the chat, with a warning (example data). It takes no rows: the chat and the editor stay where they are:
+The quota panel floats at the bottom right, just above the editor, with a warning (example data). It takes no rows: the chat and the editor stay where they are:
 
-![Quota panel floating at the top right: the 5h, weekly, MCP and Copilot rows with provider names in blue; below, a warning for the Zhipu 5h window and the editor](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-widget.png)
+![Quota panel floating at the bottom right, just above the editor: the 5h, weekly, MCP and Copilot rows with provider names in blue, beside a warning for the Zhipu 5h window](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-widget.png)
 
 `/quota`, the full report (shown to you only, never sent to the model):
 
@@ -24,7 +24,7 @@ The quota panel floats at the top right, over the chat, with a warning (example 
 
 ![/quota config: language, quota panel (floating, above the editor or hidden), alerts for the 5h and weekly windows](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-config.png)
 
-- **Floating** by default: the panel sits at the top right, where the chat leaves the most room, and takes no rows and no keyboard input. When the terminal is too narrow to keep 40 columns of chat beside it (or too short), it moves above the editor until there is room again. `/quota config` → *Quota panel* switches between floating, above the editor and hidden.
+- **Floating** by default: the panel sits on the chat's last rows at the right, just above the editor, and takes no rows and no keyboard input. It moves up with the editor when your input grows or a menu opens, and one row more while pi shows "Jump to latest message". When the terminal is too narrow to keep 40 columns of chat beside it (or too short), it moves above the editor until there is room again. `/quota config` → *Quota panel* switches between floating, above the editor and hidden.
 - Provider names (`Zhipu`, `Copilot`) are blue (`#008AFA`); in terminals without truecolor pi uses the nearest of its 256 colors.
 - Up to 3 rows per provider: 5-hour window (`5h`), weekly window (`wk`), monthly MCP allowance (`mcp`). Windows your plan doesn't have are not shown.
 - Each row: a 10-cell bar, the percent left, and `⏳` with the time until the reset (`14m` / `3h12m` / `4d`).
@@ -105,7 +105,7 @@ Type `/quota ` to see every argument with a description.
 | Field | Default | Meaning |
 |---|---|---|
 | `language` | `"en"` | `"en"` or `"zh"` (`/quota lang`, `/quota config`) |
-| `placement` | `"float"` | `"float"`: at the top right, over the chat; `"inline"`: above the editor (`/quota config`) |
+| `placement` | `"float"` | `"float"`: at the bottom right, just above the editor, over the chat; `"inline"`: above the editor (`/quota config`) |
 | `hidden` | `false` | Whether the panel is hidden (`/quota hide\|show`) |
 | `muted` | `[]` | Muted windows (`/quota mute\|unmute`) |
 | `warnBelow` | `20` | Warn when less than this percent is left, in (0, 100] |
@@ -137,7 +137,8 @@ Not ported: the 20+ other providers, the Web / Desktop / GUI surfaces, the setti
 ## Known limitations
 
 - Copilot's monthly credits and the MCP allowance are shown but never alert.
-- The floating panel covers the right end of chat lines that reach it (it is drawn over the chat, not beside it); switch to *above the editor* in `/quota config` if you prefer it out of the chat entirely. It floats only in pi's fullscreen mode (the default); in `--tui-mode regular` the panel stays above the editor.
+- The floating panel is drawn over the chat, not beside it: it covers the right end of the chat's last 4 lines, which is where the newest text appears; scroll or switch to *above the editor* in `/quota config` to read what is under it. It floats only in pi's fullscreen mode (the default); in `--tui-mode regular` the panel stays above the editor.
+- While the panel floats, pi's `/settings` cannot switch the TUI mode (pi refuses while any overlay is open: "Close active overlays before changing TUI mode"). Run `/quota hide` first and `/quota show` after, or pick *above the editor*.
 - Copilot and MCP windows have no fixed length, so they have no pace; Zhipu does not report a window start either, so it is taken as "reset time − window length".
 - Sent alerts are remembered in one small file without a lock: when several pi sessions check at the very same moment, a warning may very rarely repeat once.
 - Z.ai global (`zai`) is not supported.

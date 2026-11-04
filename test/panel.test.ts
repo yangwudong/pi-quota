@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DisplayLine, Tone } from "../src/format.ts";
-import { CARD_MARGIN, CARD_PADDING, cardWidth, floats, isPlacement, MIN_CHAT_COLUMNS, MIN_FREE_ROWS } from "../src/layout.ts";
+import { CARD_PADDING, cardSpot, cardWidth, floats, isPlacement, MIN_CHAT_COLUMNS, MIN_FREE_ROWS } from "../src/layout.ts";
 import { CARD_EDGE, cardLines, inlineLines, type Paint, PROVIDER_COLOR_HEX } from "../src/panel.ts";
 
 /** Plain-text stand-ins that show where each paint goes; ⏳ and CJK count 2 columns, as in pi-tui. */
@@ -32,16 +32,35 @@ describe("panel placement", () => {
     assert.equal(cardWidth([]), 2 * CARD_PADDING);
   });
 
-  it("floats only while enough chat stays clear beside it and enough rows below it", () => {
+  it("floats only while enough chat stays clear beside it and the terminal is tall enough", () => {
     const card = { width: 46, height: 4 };
-    const wide = { columns: card.width + CARD_MARGIN.right + MIN_CHAT_COLUMNS, rows: 40 };
+    const wide = { columns: card.width + MIN_CHAT_COLUMNS, rows: 40 };
     assert.equal(floats("float", wide, card), true);
     assert.equal(floats("float", { ...wide, columns: wide.columns - 1 }, card), false, "too narrow");
-    const tall = { columns: 140, rows: card.height + CARD_MARGIN.top + MIN_FREE_ROWS };
+    const tall = { columns: 140, rows: card.height + MIN_FREE_ROWS };
     assert.equal(floats("float", tall, card), true);
     assert.equal(floats("float", { ...tall, rows: tall.rows - 1 }, card), false, "too short");
     assert.equal(floats("inline", wide, card), false, "chosen above the editor");
     assert.equal(floats("float", wide, { width: 46, height: 0 }), false, "nothing to show");
+  });
+
+  it("sits on the chat's last row, right above pi's editor area, flush right", () => {
+    // A 32-row terminal whose chat has 26 rows (0-25): the card's 4 rows are 22-25.
+    assert.deepEqual(cardSpot({ rows: 26, scrolledUp: false, scrollbar: "auto" }, 4), { row: 22, right: 0 });
+    // The editor grew, or a status line or a menu opened: the chat is shorter, the card moves up.
+    assert.deepEqual(cardSpot({ rows: 20, scrolledUp: false, scrollbar: "auto" }, 4), { row: 16, right: 0 });
+  });
+
+  it("steps up a row for pi's 'Jump to latest message', and leaves an always-on scrollbar its column", () => {
+    assert.deepEqual(cardSpot({ rows: 26, scrolledUp: true, scrollbar: "auto" }, 4), { row: 21, right: 0 });
+    assert.deepEqual(cardSpot({ rows: 26, scrolledUp: false, scrollbar: "always" }, 4), { row: 22, right: 1 });
+  });
+
+  it("does not show while the chat is too short to hold it, rather than cover the editor area", () => {
+    assert.deepEqual(cardSpot({ rows: 4, scrolledUp: false, scrollbar: "auto" }, 4), { row: 0, right: 0 }, "exactly fits");
+    assert.equal(cardSpot({ rows: 3, scrolledUp: false, scrollbar: "auto" }, 4), undefined);
+    assert.equal(cardSpot({ rows: 4, scrolledUp: true, scrollbar: "auto" }, 4), undefined, "the jump label takes a row");
+    assert.equal(cardSpot({ rows: 26, scrolledUp: false, scrollbar: "auto" }, 0), undefined, "nothing to show");
   });
 });
 

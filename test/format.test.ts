@@ -237,7 +237,7 @@ describe("full report", () => {
     assert.equal(lines[0], `pi-quota 配额报告 · ${clockTime(NOW, NOW)}`);
     assert.equal(lines[2], `  5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ ${fiveHourReset}（3h 12m）`);
     assert.equal(lines[3], "        节奏：正常（均匀线 64%）");
-    assert.equal(lines.at(-1), "提醒：<20% 警告 · 回到 ≥50% 发 Quota available · 静音：无 · 面板：悬浮（右上）");
+    assert.equal(lines.at(-1), "提醒：<20% 警告 · 回到 ≥50% 发 Quota available · 静音：无 · 面板：悬浮（右下）");
     assert.match(fullReport(both, reports, { nowMs: NOW, config: { ...ZH, placement: "inline" } }).at(-1) ?? "", /面板：编辑器上方$/);
   });
 

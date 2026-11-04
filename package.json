@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@jack-yang/pi-quota",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Quota monitor for the pi coding agent: Zhipu GLM Coding Plan (CN) 5h / weekly / MCP windows and GitHub Copilot AI credits, with run-out warnings and \"Quota available\" notices; English and Chinese (port of opencode-quota)",
   "type": "module",
   "keywords": [
