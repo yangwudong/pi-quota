@@ -8,7 +8,7 @@
  * - Providers are asked in parallel (`Promise.allSettled`); one failing never hides the other.
  * - Files are written whole through a temp file and a rename, so a reader never sees half a file.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DEFAULT_LOCALE, isLocale, isPercentShown, type Locale, type PercentShown } from "../i18n.ts";
 import { DEFAULT_PLACEMENT, isPlacement, type PanelPlacement } from "../layout.ts";
@@ -190,13 +190,15 @@ function readParsed<T>(path: string, parse: (raw: JsonValue | undefined) => T): 
 
 /** Writes a settings or state file whole: a sibling temp file renamed into place. False on failure. */
 export function writeJsonAtomic(path: string, value: QuotaConfig | AlertState): boolean {
+  const temp = `${path}.${process.pid}.${Date.now()}.tmp`;
   try {
     mkdirSync(dirname(path), { recursive: true });
-    const temp = `${path}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
     renameSync(temp, path);
     return true;
   } catch {
+    // Leave no temp file behind when the write or the rename failed.
+    rmSync(temp, { force: true });
     return false;
   }
 }

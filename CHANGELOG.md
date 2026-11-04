@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0] - 2026-11-04
+
+First stable release: the settings in `config.json`, the `/quota` commands and the panel's
+placements are now kept compatible within 1.x.
+
+- Fixed: a Zhipu limit whose `percentage` is missing, `null` or not a number now fails the reply
+  as bad data (`Zhipu   ✗ bad data`). Before, it showed a made-up 0% (or 100%) left, and could
+  even send a low-quota warning for it.
+- Fixed: after switching pi's TUI mode (with the panel above the editor or hidden), a floating
+  placement floats again on the next refresh instead of only after `/reload`.
+- Fixed: a settings or state file that could not be saved no longer leaves a `.tmp` file behind.
+- The Zhipu request's `User-Agent` is `pi-quota`, without a stale version number.
+
 ## [0.4.0] - 2026-11-04
 
 - **Choose the floating corner**: `/quota config` → *Quota panel* now cycles floating top right /

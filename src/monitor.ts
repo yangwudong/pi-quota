@@ -56,8 +56,8 @@ export type NotifyLevel = "info" | "warning" | "error";
 export type MonitorUi = {
   notify(message: string, level: NotifyLevel): void;
   /**
-   * Shows the quota panel's lines where `placement` says (pi's TUI floats them at the bottom right,
-   * just above the editor; other modes put them above the editor), or removes the panel when `lines` is undefined.
+   * Shows the quota panel's lines where `placement` says (pi's TUI floats them at the top or bottom
+   * right of the chat; other modes put them above the editor), or removes the panel when `lines` is undefined.
    */
   showPanel(lines: readonly DisplayLine[] | undefined, placement: PanelPlacement): void;
   /** A pick from a list (`/quota config`, `/quota lang`); undefined when cancelled. */

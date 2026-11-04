@@ -111,14 +111,12 @@ class QuotaPanel implements Component {
   #overlay: OverlayHandle | undefined;
   readonly #tui: TUI;
   readonly #paint: Paint;
-  readonly #canFloat: boolean;
   readonly #card: Component;
   readonly #options: OverlayOptions;
 
   constructor(tui: TUI, theme: Theme) {
     this.#tui = tui;
     this.#paint = paintWith(theme);
-    this.#canFloat = isViewportTUI(tui) && hasChatAccessor(tui);
     this.#card = {
       render: (width: number) => cardLines(this.#lines, this.#paint, width),
       invalidate: () => {},
@@ -153,9 +151,14 @@ class QuotaPanel implements Component {
     this.#tui.requestRender();
   }
 
-  /** The overlay exists only while floating is chosen: pi switches TUI modes only without one. */
+  /**
+   * The overlay exists only while floating is chosen: pi switches TUI modes only without one. The
+   * `tui` pi hands a widget follows pi's current renderer, so after a mode switch (made while the
+   * card did not float) the next update floats it again, or keeps it inline in regular mode.
+   */
   #syncOverlay(): void {
-    const wanted = this.#canFloat && !this.#disposed && this.#placement !== "inline";
+    const canFloat = isViewportTUI(this.#tui) && hasChatAccessor(this.#tui);
+    const wanted = canFloat && !this.#disposed && this.#placement !== "inline";
     if (wanted && !this.#overlay) this.#overlay = this.#tui.showOverlay(this.#card, this.#options);
     if (!wanted && this.#overlay) {
       this.#overlay.hide();

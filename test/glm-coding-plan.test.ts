@@ -172,13 +172,28 @@ describe("parseGlmCodingPlan: failures", () => {
     }
   });
 
-  it("a percentage that is no number fails the reply (as the original)", () => {
-    const result = parseGlmCodingPlan(
-      limitsReply([{ ...credit({ usage: 100, currentValue: 10 }), percentage: { toString: null } }]),
-    );
-    assert.deepEqual(result, {
+  it("a percentage that is no finite number fails the reply, rather than showing a made-up 0% or 100% left", () => {
+    const bad: Array<[string, unknown]> = [
+      ["missing", undefined],
+      ["null", null],
+      ["a string", "50"],
+      ["NaN", Number.NaN],
+      ["an object", { toString: null }],
+    ];
+    for (const [name, percentage] of bad) {
+      const limit: Record<string, unknown> = { type: "TOKENS_LIMIT", unit: 3, nextResetTime: 1793710229326 };
+      if (percentage !== undefined) limit.percentage = percentage;
+      assert.deepEqual(
+        parseGlmCodingPlan(limitsReply([limit as never])),
+        { ok: false, error: { kind: "bad_data", message: "Invalid quota data: a limit's percentage is not a number" } },
+        name,
+      );
+    }
+    // A credit limit with exact values still needs a valid percentage, as the original reads it first.
+    assert.equal(parseGlmCodingPlan(limitsReply([{ ...credit({ usage: 100, currentValue: 10 }) } as never])).ok, false);
+    assert.deepEqual(parseGlmCodingPlan(limitsReply([null as never])), {
       ok: false,
-      error: { kind: "bad_data", message: "Cannot convert object to primitive value" },
+      error: { kind: "bad_data", message: "Invalid quota data: a limit is not an object" },
     });
   });
 

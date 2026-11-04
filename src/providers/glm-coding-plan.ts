@@ -56,10 +56,14 @@ function finite(value: unknown): number | undefined {
 }
 
 /**
- * The percent left: from exact credit values when a credit limit has them, else reported. The
- * reported one is read first, so a malformed `percentage` fails the reply either way.
+ * The percent left: from exact credit values when a credit limit has them, else reported. A
+ * `percentage` that is not a finite number throws, so the whole reply fails as bad data rather
+ * than showing a made-up 0% (or 100%) left.
  */
 function percentRemaining(limit: GlmLimit): number {
+  if (typeof limit.percentage !== "number" || !Number.isFinite(limit.percentage)) {
+    throw new Error("Invalid quota data: a limit's percentage is not a number");
+  }
   const reported = clampPercent(100 - limit.percentage);
   if (
     limit.type === "CREDIT_LIMIT" &&
@@ -75,10 +79,11 @@ function percentRemaining(limit: GlmLimit): number {
   return reported;
 }
 
-/** The 5h, weekly and MCP rows of the reply's limits; a later limit of a window wins. */
+/** The 5h, weekly and MCP rows of the reply's limits; a later limit of a window wins. Throws on bad data. */
 function glmRows(limits: GlmLimit[]): QuotaRow[] {
   const windows: Partial<Record<QuotaWindow, GlmWindow>> = {};
   for (const limit of limits) {
+    if (!limit || typeof limit !== "object") throw new Error("Invalid quota data: a limit is not an object");
     const resetDate = limit.nextResetTime ? new Date(Math.round(limit.nextResetTime)) : null;
     const resetTimeIso =
       resetDate && Number.isFinite(resetDate.valueOf()) && resetDate.valueOf() > 0
@@ -166,7 +171,7 @@ export async function fetchGlmCodingPlan(options: {
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
       "Content-Type": "application/json",
-      "User-Agent": "pi-quota/0.1",
+      "User-Agent": "pi-quota",
     },
     secrets: [apiKey],
     timeoutMs: options.timeoutMs,

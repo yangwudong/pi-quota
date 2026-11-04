@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -179,5 +179,13 @@ describe("settings and alert state files", () => {
     writeJsonAtomic(paths.state, state);
     assert.deepEqual(loadAlertState(paths.state), state);
     assert.ok(readFileSync(paths.state, "utf8").endsWith("}\n"));
+  });
+
+  it("a failed write says so and leaves no temp file behind", () => {
+    const paths = quotaPaths(dir());
+    // A directory where the file should be: the rename into place fails.
+    mkdirSync(paths.config, { recursive: true });
+    assert.equal(writeJsonAtomic(paths.config, DEFAULT_CONFIG), false);
+    assert.deepEqual(readdirSync(paths.dir), ["config.json"], "only the directory in the way, no .tmp");
   });
 });

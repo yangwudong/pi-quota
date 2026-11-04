@@ -1,6 +1,6 @@
 /**
  * pi-quota: watches the Zhipu GLM Coding Plan (CN) and GitHub Copilot quotas, shows them in a
- * panel (by default a card floating at the bottom right, just above the editor, see ./quota-panel.ts), warns before a
+ * panel (by default a card floating at the top right of the chat, see ./quota-panel.ts), warns before a
  * 5-hour or weekly window runs out, and says "Quota available" when it is back. Everything
  * reaches the user through `ctx.ui` (widget / overlay / notify); nothing is a tool result or a
  * message, so quota never enters the model's context.
