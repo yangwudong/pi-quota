@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { type AuthSources, resolveAgentDir, resolveCopilotToken, resolveZhipuKey } from "../src/auth.ts";
+import { messages } from "../src/i18n.ts";
 
 const KEY = "0123456789abcdef0123456789abcdef.SecretPart123456";
 const OAUTH = "ghu_TestOAuthToken0123456789abcdefABCDEF";
@@ -43,21 +44,20 @@ describe("Zhipu key", () => {
     });
   });
 
-  it("without either it is not configured, and says how to configure", () => {
+  it("without either it is not configured, with the setup hint", () => {
     for (const auth of [undefined, "{broken", {}, { "zai-coding-cn": { type: "oauth", refresh: "x" } }]) {
       const resolved = resolveZhipuKey(sources(auth));
-      assert.equal(resolved.ok, false);
-      if (resolved.ok) continue;
-      assert.equal(resolved.error.kind, "not_configured");
-      assert.match(resolved.error.message, /ZAI_CODING_CN_API_KEY/);
+      assert.deepEqual(resolved, { ok: false, error: { kind: "not_configured", message: "", hint: "zhipu_setup" } });
     }
+    // The hint is worded at display time, in the user's language.
+    assert.match(messages("en").hints.zhipu_setup, /ZAI_CODING_CN_API_KEY/);
+    assert.match(messages("zh").hints.zhipu_setup, /未配置智谱 API key/);
   });
 
   it("does not run a !command key, and does not show it", () => {
     const resolved = resolveZhipuKey(sources({ "zai-coding-cn": { type: "api_key", key: "!security find-generic-password -w zai" } }));
-    assert.equal(resolved.ok, false);
     // Configured but unusable: an auth problem, not "not in use".
-    assert.equal(!resolved.ok && resolved.error.kind, "auth");
+    assert.deepEqual(resolved, { ok: false, error: { kind: "auth", message: "", hint: "zhipu_command_key" } });
     assert.ok(!JSON.stringify(resolved).includes("security find-generic-password"));
   });
 });
@@ -74,23 +74,25 @@ describe("Copilot token", () => {
     const apiKey = resolveCopilotToken(
       sources({ "github-copilot": { type: "api_key", key: "ghp_Classic0123456789" } }, { COPILOT_GITHUB_TOKEN: OAUTH }),
     );
-    assert.equal(!apiKey.ok && apiKey.error.kind, "auth");
-    assert.match(!apiKey.ok ? apiKey.error.message : "", /不接受 API key/);
+    assert.deepEqual(apiKey, { ok: false, error: { kind: "auth", message: "", hint: "copilot_not_oauth" } });
+    assert.match(messages("en").hints.copilot_not_oauth, /API keys are not accepted/);
     const nothing = resolveCopilotToken(sources({}, { COPILOT_GITHUB_TOKEN: OAUTH }));
-    assert.match(!nothing.ok ? nothing.error.message : "", /\/login github-copilot/);
+    assert.deepEqual(nothing, { ok: false, error: { kind: "not_configured", message: "", hint: "copilot_login" } });
+    assert.match(messages("en").hints.copilot_login, /\/login github-copilot/);
   });
 
   it("refuses a GitHub Enterprise login and a login without its OAuth token", () => {
     const enterprise = resolveCopilotToken(
       sources({ "github-copilot": { type: "oauth", refresh: OAUTH, enterpriseUrl: "acme.ghe.com" } }),
     );
-    assert.match(!enterprise.ok ? enterprise.error.message : "", /Enterprise/);
+    assert.equal(!enterprise.ok && enterprise.error.hint, "copilot_enterprise");
+    assert.match(messages("en").hints.copilot_enterprise, /Enterprise/);
     const github = resolveCopilotToken(
       sources({ "github-copilot": { type: "oauth", refresh: OAUTH, enterpriseUrl: "https://github.com" } }),
     );
     assert.equal(github.ok, true);
     const missing = resolveCopilotToken(sources({ "github-copilot": { type: "oauth", access: INFERENCE } }));
-    assert.equal(!missing.ok && missing.error.kind, "auth");
+    assert.deepEqual(missing, { ok: false, error: { kind: "auth", message: "", hint: "copilot_no_token" } });
   });
 
   it("never puts a token in an error", () => {

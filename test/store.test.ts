@@ -136,22 +136,25 @@ describe("settings and alert state files", () => {
     assert.deepEqual(loadConfig(paths.config), DEFAULT_CONFIG);
   });
 
-  it("bad fields take their defaults; muted keeps only alert windows", () => {
+  it("bad fields take their defaults; muted keeps only alert windows; English unless told", () => {
     assert.deepEqual(
-      parseConfig({ hidden: "yes", muted: ["weekly", "mcp-monthly", "weekly", 3], warnBelow: 0, recoverAt: 101 }),
-      { hidden: false, muted: ["weekly"], warnBelow: 20, recoverAt: 50 },
+      parseConfig({ language: "fr", hidden: "yes", muted: ["weekly", "mcp-monthly", "weekly", 3], warnBelow: 0, recoverAt: 101 }),
+      { language: "en", hidden: false, muted: ["weekly"], warnBelow: 20, recoverAt: 50 },
     );
-    assert.deepEqual(parseConfig({ hidden: true, muted: ["five-hour"], warnBelow: 99, recoverAt: 60 }), {
+    assert.deepEqual(parseConfig({ language: "zh", hidden: true, muted: ["five-hour"], warnBelow: 99, recoverAt: 60 }), {
+      language: "zh",
       hidden: true,
       muted: ["five-hour"],
       warnBelow: 99,
       recoverAt: 60,
     });
+    // A config.json from 0.1.x (no language field) reads as English.
+    assert.equal(parseConfig({ hidden: false, muted: [], warnBelow: 20, recoverAt: 50 }).language, "en");
   });
 
   it("round-trips settings and alert state, writing whole files", () => {
     const paths = quotaPaths(dir());
-    const config = { hidden: true, muted: ["five-hour" as const], warnBelow: 20, recoverAt: 50 };
+    const config = { language: "zh" as const, hidden: true, muted: ["five-hour" as const], warnBelow: 20, recoverAt: 50 };
     assert.equal(writeJsonAtomic(paths.config, config), true);
     assert.deepEqual(loadConfig(paths.config), config);
     const state = { "zai-coding-cn:five-hour": { low: true, warnedReset: "2026-11-03T14:30:00.000Z" } };

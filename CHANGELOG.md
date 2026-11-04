@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0] - 2026-11-04
+
+- **English by default**, Simplified Chinese on request: everything pi-quota shows (panel,
+  warnings, "Quota available", `/quota` report, command replies) follows `language` in
+  `~/.pi/agent/pi-quota/config.json`. To keep the 0.1.x Chinese text, run `/quota lang zh` once.
+- `/quota config`: a settings menu for the language, the quota panel and the alerts of each
+  window; each pick applies at once.
+- `/quota lang [en|zh]`: sets the language, or offers a picker without an argument.
+- Typing `/quota ` lists every argument with a description, in the chosen language.
+- The reset countdown is marked with `⏳` and a space: `⏳ 3h12m` (was `↻3h12m`).
+
 ## [0.1.1] - 2026-11-04
 
 - Published from GitHub Actions through npm Trusted Publishing, so this and later versions

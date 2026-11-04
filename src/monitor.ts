@@ -32,6 +32,15 @@ import {
 } from "./format.ts";
 import { fetchCopilotQuota } from "./providers/copilot.ts";
 import { fetchGlmCodingPlan } from "./providers/glm-coding-plan.ts";
+import {
+  DEFAULT_LOCALE,
+  type Locale,
+  LOCALE_NAMES,
+  LOCALES,
+  type Messages,
+  messages,
+  parseLocale,
+} from "./i18n.ts";
 
 export const WIDGET_KEY = "quota";
 export const REFRESH_INTERVAL_MS = 60_000;
@@ -44,6 +53,8 @@ export type MonitorUi = {
   setWidget(key: string, lines: string[] | undefined): void;
   /** Colors one widget line; plain text without it. */
   paint?(tone: Tone, text: string): string;
+  /** A pick from a list (`/quota config`, `/quota lang`); undefined when cancelled. */
+  select?(title: string, options: string[]): Promise<string | undefined>;
 };
 
 /** Starts a timer and returns what cancels it. */
@@ -58,28 +69,33 @@ export type MonitorOptions = {
   automatic?: boolean;
 };
 
-export const COMMAND_USAGE =
-  "用法：/quota [status | refresh | mute <five-hour|weekly> | unmute <five-hour|weekly> | hide | show]";
-
 /** Argument completions of `/quota`. */
 export const COMMAND_ARGUMENTS: readonly string[] = [
   "status",
   "refresh",
+  "config",
+  "lang",
+  ...LOCALES.map((locale) => `lang ${locale}`),
   ...ALERT_WINDOWS.map((window) => `mute ${window}`),
   ...ALERT_WINDOWS.map((window) => `unmute ${window}`),
   "hide",
   "show",
 ];
 
+export type ArgumentCompletion = { value: string; description: string };
+
 /**
- * The completions for what follows `/quota `; none once the argument is complete, so Enter runs
- * the command at once instead of first accepting the same text from the popup.
+ * The completions for what follows `/quota `, each with a description in the user's language;
+ * none once the argument is complete, so Enter runs the command at once instead of first accepting
+ * the same text from the popup.
  */
-export function completeArguments(prefix: string): string[] | null {
-  const typed = prefix.trim().toLowerCase();
+export function completeArguments(prefix: string, locale: Locale = DEFAULT_LOCALE): ArgumentCompletion[] | null {
+  // Keep a trailing space: "lang " asks for a value, so the bare "lang" is no longer offered.
+  const typed = prefix.trimStart().toLowerCase();
   const matches = COMMAND_ARGUMENTS.filter((value) => value.startsWith(typed));
-  if (matches.length === 0 || (matches.length === 1 && matches[0] === typed)) return null;
-  return matches;
+  if (matches.length === 0 || (matches.length === 1 && matches[0] === typed.trimEnd())) return null;
+  const words = messages(locale).argument;
+  return matches.map((value) => ({ value, description: words[value] ?? "" }));
 }
 
 const WINDOW_ALIASES: Readonly<Record<string, AlertWindow>> = { "5h": "five-hour", wk: "weekly", week: "weekly" };
@@ -128,6 +144,8 @@ export type QuotaMonitor = {
   stop(): void;
   /** Settles when the check in flight (if any) is done; for tests. */
   idle(): Promise<void>;
+  /** The language in use now: the `/` menu's argument descriptions follow it. */
+  locale(): Locale;
 };
 
 export function createMonitor(options: MonitorOptions): QuotaMonitor {
@@ -163,7 +181,11 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
         current.setWidget(WIDGET_KEY, undefined);
         return;
       }
-      const lines = widgetLines(providers, reports, { nowMs: now(), warnBelow: config.warnBelow });
+      const lines = widgetLines(providers, reports, {
+        nowMs: now(),
+        warnBelow: config.warnBelow,
+        locale: config.language,
+      });
       // Nothing configured: no widget at all rather than an empty one.
       if (lines.length === 0) {
         current.setWidget(WIDGET_KEY, undefined);
@@ -212,8 +234,9 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
     // Nobody to tell (the session ended meanwhile): leave the alerts to the next session.
     if (!ui) return latest;
     for (const alert of decide(latest)) {
-      if (alert.kind === "warning") withUi((current) => current.notify(warningMessage(alert, now()), "warning"));
-      else pendingInfo.push(recoveryMessage(alert));
+      if (alert.kind === "warning") {
+        withUi((current) => current.notify(warningMessage(alert, now(), config.language), "warning"));
+      } else pendingInfo.push(recoveryMessage(alert, config.language));
     }
     return latest;
   }
@@ -276,64 +299,122 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
     withUi((current) => current.notify(text, level));
   }
 
-  function saveConfig(): string {
-    return writeJsonAtomic(paths.config, config) ? "" : `（未能保存到 ${paths.config}）`;
+  /** The words of the language in use. */
+  function words(): Messages {
+    return messages(config.language);
+  }
+
+  /** Changes the settings (re-read first: another session may have changed them), saves, redraws. */
+  function updateConfig(change: (current: QuotaConfig) => QuotaConfig): string {
+    config = change(loadConfig(paths.config));
+    const saved = writeJsonAtomic(paths.config, config);
+    render();
+    return saved ? "" : words().saveFailed(paths.config);
+  }
+
+  function setMuted(window: AlertWindow, mute: boolean): string {
+    return updateConfig((current) => {
+      const muted = new Set(current.muted);
+      if (mute) muted.add(window);
+      else muted.delete(window);
+      return { ...current, muted: ALERT_WINDOWS.filter((name) => muted.has(name)) };
+    });
+  }
+
+  /** The language picker; undefined when cancelled or when this UI has no picker. */
+  async function pickLanguage(current: MonitorUi): Promise<Locale | undefined> {
+    if (!current.select) return undefined;
+    const picked = await current.select(
+      words().languageTitle,
+      LOCALES.map((locale) => LOCALE_NAMES[locale]),
+    );
+    return LOCALES.find((locale) => LOCALE_NAMES[locale] === picked);
+  }
+
+  /** `/quota lang [en|zh]`: sets the language, or asks for it. Says so in the new language. */
+  async function language(argument: string, current: MonitorUi): Promise<void> {
+    const locale = argument ? parseLocale(argument) : await pickLanguage(current);
+    if (!locale) {
+      if (argument || !current.select) say(words().usage, "warning");
+      return;
+    }
+    const failed = updateConfig((settings) => ({ ...settings, language: locale }));
+    say(`${words().languageSet(LOCALE_NAMES[locale])}${failed}`);
+  }
+
+  /** `/quota config`: a settings menu; each pick applies at once and the menu comes back until Done. */
+  async function settingsMenu(current: MonitorUi): Promise<void> {
+    const select = current.select;
+    if (!select) {
+      say(words().usage, "warning");
+      return;
+    }
+    for (;;) {
+      config = loadConfig(paths.config);
+      const w = words();
+      const items: Array<{ label: string; apply?: () => Promise<unknown> | unknown }> = [
+        {
+          label: w.configLanguage(LOCALE_NAMES[config.language]),
+          apply: async () => {
+            const locale = await pickLanguage(current);
+            if (locale) updateConfig((settings) => ({ ...settings, language: locale }));
+          },
+        },
+        { label: w.configPanel(config.hidden), apply: () => updateConfig((s) => ({ ...s, hidden: !s.hidden })) },
+        ...ALERT_WINDOWS.map((window) => {
+          const isMuted = config.muted.includes(window);
+          return { label: w.configMute(window, isMuted), apply: () => setMuted(window, !isMuted) };
+        }),
+        { label: w.configDone },
+      ];
+      const picked = await select(w.configTitle, items.map((item) => item.label));
+      const apply = items.find((item) => item.label === picked)?.apply;
+      if (!apply) break;
+      await apply();
+    }
+    const w = words();
+    say(`${w.configLanguage(LOCALE_NAMES[config.language])} · ${w.reportSettings(config)}`);
+  }
+
+  async function report(): Promise<void> {
+    const latest = await refresh();
+    say(fullReport(providers, latest, { nowMs: now(), config }).join("\n"));
+  }
+
+  async function status(force: boolean): Promise<void> {
+    const latest = await refresh(force);
+    const line = statusLine(latest, { nowMs: now(), config });
+    say(force ? words().refreshed(line) : line);
+  }
+
+  function mute(on: boolean, argument: string): void {
+    const window = parseWindow(argument);
+    if (!window) {
+      say(words().usage, "warning");
+      return;
+    }
+    const failed = setMuted(window, on);
+    say(`${on ? words().muted(window) : words().unmuted(window)}${failed}`);
+  }
+
+  function visibility(hidden: boolean): void {
+    const failed = updateConfig((settings) => ({ ...settings, hidden }));
+    say(`${hidden ? words().hidden : words().shown}${failed}`);
   }
 
   async function command(args: string, nextUi: MonitorUi): Promise<void> {
     ui = nextUi;
+    // The command answers in the language set now, also when another session changed it.
+    config = loadConfig(paths.config);
     const [sub = "", argument = ""] = args.trim().split(/\s+/u);
-    switch (sub.toLowerCase()) {
-      case "": {
-        const latest = await refresh();
-        say(fullReport(providers, latest, { nowMs: now(), config }).join("\n"));
-        return;
-      }
-      case "status": {
-        const latest = await refresh();
-        say(statusLine(latest, { nowMs: now(), config }));
-        return;
-      }
-      case "refresh": {
-        const latest = await refresh(true);
-        say(`已刷新 · ${statusLine(latest, { nowMs: now(), config })}`);
-        return;
-      }
-      case "mute":
-      case "unmute": {
-        const window = parseWindow(argument);
-        if (!window) {
-          say(COMMAND_USAGE, "warning");
-          return;
-        }
-        config = loadConfig(paths.config);
-        const muted = new Set(config.muted);
-        if (sub.toLowerCase() === "mute") muted.add(window);
-        else muted.delete(window);
-        config = { ...config, muted: ALERT_WINDOWS.filter((name) => muted.has(name)) };
-        const failed = saveConfig();
-        say(
-          sub.toLowerCase() === "mute"
-            ? `已静音 ${window}：不再发送该窗口的警告与 Quota available${failed}`
-            : `已取消静音 ${window}${failed}`,
-        );
-        return;
-      }
-      case "hide":
-      case "show": {
-        config = { ...loadConfig(paths.config), hidden: sub.toLowerCase() === "hide" };
-        const failed = saveConfig();
-        render();
-        say(
-          config.hidden
-            ? `已隐藏配额面板（后台监控与提醒照常，/quota show 恢复）${failed}`
-            : `已显示配额面板${failed}`,
-        );
-        return;
-      }
-      default:
-        say(COMMAND_USAGE, "warning");
-    }
+    const name = sub.toLowerCase();
+    if (name === "") return report();
+    if (name === "status" || name === "refresh") return status(name === "refresh");
+    if (name === "config" || name === "settings") return settingsMenu(nextUi);
+    if (name === "lang" || name === "language") return language(argument, nextUi);
+    if (name === "mute" || name === "unmute") return mute(name === "mute", argument);
+    if (name === "hide" || name === "show") return visibility(name === "hide");
+    say(words().usage, "warning");
   }
 
   return {
@@ -358,5 +439,6 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
     async idle() {
       while (inflight) await settled(inflight);
     },
+    locale: () => config.language,
   };
 }

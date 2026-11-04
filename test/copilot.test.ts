@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FetchLike } from "../src/http.ts";
+import { messages } from "../src/i18n.ts";
 import {
   COPILOT_USER_URL,
   copilotResult,
@@ -165,16 +166,29 @@ describe("parseCopilotInternalUser (numbers as the original)", () => {
 });
 
 describe("copilotResult notes", () => {
-  it("unlimited, plan-only and percent-less quotas show a note instead of a row", () => {
-    assert.deepEqual(copilotResult({ mode: "unlimited", unit: "ai_credits" }), { ok: true, rows: [], note: "AI credits 不限量" });
+  it("unlimited, plan-only and percent-less quotas give a structured note instead of a row", () => {
+    assert.deepEqual(copilotResult({ mode: "unlimited", unit: "ai_credits" }), {
+      ok: true,
+      rows: [],
+      note: { kind: "unlimited", label: "AI credits" },
+    });
     assert.deepEqual(copilotResult({ mode: "plan_only", plan: "business" }), {
       ok: true,
       rows: [],
-      note: "仅有套餐信息，无用量数据",
+      note: { kind: "plan_only" },
       plan: "business",
     });
     const result = copilotResult({ mode: "quota", unit: "ai_credits", used: 750, total: 1000, authority: "locally_derived" });
-    assert.deepEqual(result, { ok: true, rows: [], note: "已用 750 AI credits（无剩余百分比）" });
+    assert.deepEqual(result, { ok: true, rows: [], note: { kind: "used_only", used: 750, label: "AI credits" } });
+  });
+
+  it("words the notes in the user's language", () => {
+    assert.equal(messages("en").note({ kind: "unlimited", label: "AI credits" }), "AI credits: unlimited");
+    assert.equal(messages("zh").note({ kind: "unlimited", label: "AI credits" }), "AI credits 不限量");
+    assert.equal(messages("en").note({ kind: "plan_only" }), "plan info only, no usage data");
+    assert.equal(messages("zh").note({ kind: "plan_only" }), "仅有套餐信息，无用量数据");
+    assert.equal(messages("en").note({ kind: "used_only", used: 2404, label: "AI credits" }), "2,404 AI credits used (no percent left reported)");
+    assert.equal(messages("zh").note({ kind: "used_only", used: 750, label: "AI credits" }), "已用 750 AI credits（无剩余百分比）");
   });
 });
 
@@ -201,7 +215,8 @@ describe("fetchCopilotQuota", () => {
     const result = await fetchCopilotQuota({ token: TOKEN, fetch });
     assert.equal(!result.ok && result.error.kind, "auth");
     assert.match(!result.ok ? result.error.message : "", /GitHub Copilot API error 401: Bad credentials/);
-    assert.match(!result.ok ? result.error.message : "", /\/login github-copilot/);
+    // "Log in again" is a hint code, worded at display time.
+    assert.equal(!result.ok && result.error.hint, "copilot_relogin");
     assert.ok(!JSON.stringify(result).includes(TOKEN));
   });
 

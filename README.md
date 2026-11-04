@@ -1,88 +1,97 @@
 # pi-quota
 
+English | [中文](./README.zh-CN.md)
+
 [![npm version](https://img.shields.io/npm/v/@jack-yang/pi-quota)](https://www.npmjs.com/package/@jack-yang/pi-quota) [![license](https://img.shields.io/npm/l/@jack-yang/pi-quota)](./LICENSE) [![CI](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml/badge.svg)](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml) ![pi](https://img.shields.io/badge/pi-%E2%89%A5%201.5.0-blue)
 
-为 [pi coding agent](https://pi.dev) 盯住订阅配额的扩展：**智谱 GLM Coding Plan（国区，`zai-coding-cn`）** 的 5 小时 / 周 / MCP 月度窗口，以及 **GitHub Copilot** 的 AI credits。余量常驻显示在编辑器上方；窗口快用完时主动警告，并按当前速度预测耗尽时间；窗口重置恢复后通知你 “Quota available”。
+A [pi coding agent](https://pi.dev) extension that keeps an eye on your subscription quota: the **Zhipu GLM Coding Plan (China, `zai-coding-cn`)** 5-hour, weekly and monthly MCP windows, and **GitHub Copilot** AI credits. The quota stays on screen above the editor; when a window is about to run out it warns you, with the run-out time at your current pace; when a window resets it tells you "Quota available".
 
-> 配额是订阅制的硬约束：插件替你盯着，在关键时刻提醒，而不是等你想起来去查。
+> Subscription quota is a hard limit: the extension watches it for you and speaks up at the right moment, instead of waiting for you to remember to check.
 
-移植自 opencode 插件 [opencode-quota](https://github.com/slkiser/opencode-quota)，只移植了这两个 provider 需要的部分（见 [与 opencode-quota 的差异](#与-opencode-quota-的差异)）。
+Ported from the opencode plugin [opencode-quota](https://github.com/slkiser/opencode-quota), keeping only what these two providers need (see [Differences from opencode-quota](#differences-from-opencode-quota)). English by default; Simplified Chinese with `/quota lang zh`.
 
-*English: a pi extension that keeps your Zhipu GLM Coding Plan (China) and GitHub Copilot quota on screen, warns once per window when a 5-hour or weekly window drops under 20% (with the run-out time at the current pace), and says "Quota available" when it is back. Install with `pi install npm:@jack-yang/pi-quota`; the UI text is Chinese.*
+## What it looks like
 
-## 显示效果
+The resident panel above the editor, with a warning (example data):
 
-编辑器上方的常驻面板：
+![Quota panel above the editor: a warning for the Zhipu 5h window at 18% with the run-out time, then the 5h, weekly, MCP and Copilot rows](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-widget.png)
 
-![编辑器上方的配额面板：Zhipu 5h 99%、MCP 100%、Copilot 90%](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-widget.png)
+`/quota`, the full report (shown to you only, never sent to the model):
 
-`/quota` 完整报告（只显示给你，不进入对话上下文）：
+![/quota full report: every window with its usage, reset time and pace analysis](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-report.png)
 
-![/quota 完整报告：各窗口余量、用量、重置时间与节奏分析](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-report.png)
+`/quota config`, the settings menu:
 
-- 每个 provider 最多 3 行：5 小时窗口（`5h`）、周窗口（`wk`）、MCP 月度配额（`mcp`）。套餐里没有的窗口不显示。
-- 每行依次是 10 格条形图、剩余百分比，`↻` 后是距重置的倒计时（`14m` / `3h12m` / `4d`）。
-- 用量快于均匀节奏、且窗口已过去 10% 以上时，行尾显示 `⚠ 快于正常`。
-- 没有配置凭据的 provider 不显示。凭据有误或请求失败时，该行显示简短原因，如 `Zhipu   ✗ auth`、`Zhipu   ✗ timeout`，另一个 provider 照常显示。
+![/quota config: language, quota panel, alerts for the 5h and weekly windows](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-config.png)
 
-主动通知：
+- Up to 3 rows per provider: 5-hour window (`5h`), weekly window (`wk`), monthly MCP allowance (`mcp`). Windows your plan doesn't have are not shown.
+- Each row: a 10-cell bar, the percent left, and `⏳` with the time until the reset (`14m` / `3h12m` / `4d`).
+- `⚠ fast` at the end of a row when the window is used faster than even use (once more than 10% of it has passed).
+- A provider without credentials is not shown. When a credential is rejected or a request fails, its row says why in a word (`Zhipu   ✗ auth`, `Zhipu   ✗ timeout`); the other provider is unaffected.
+
+Notifications:
 
 ```
-Warning: pi-quota · Zhipu 5h 窗口配额仅剩 15%，1h20m 后重置；按当前速度约 40m 后耗尽（/quota mute five-hour 可静音）
-✅ Quota available · Zhipu 5h 窗口已恢复至 100%
+Warning: pi-quota · Zhipu 5h window: 15% left, resets in 1h20m; at this pace it runs out in about 40m (mute: /quota mute five-hour)
+✅ Quota available · Zhipu 5h window is back to 100%
 ```
 
-## 安装
+## Install
 
 ```bash
-pi install npm:@jack-yang/pi-quota     # 从 npm 安装（推荐）
-pi install /path/to/pi-quota           # 本地目录：不复制，直接从该路径加载
-pi -e npm:@jack-yang/pi-quota          # 只在本次启动试用，不写入 settings
+pi install npm:@jack-yang/pi-quota     # from npm (recommended)
+pi install /path/to/pi-quota           # local directory: loaded from that path, not copied
+pi -e npm:@jack-yang/pi-quota          # try it for this run only, without touching settings
 ```
 
-安装后重启 pi，或在已打开的会话里执行 `/reload`。以后升级用 `pi update --extensions`。npm 版和本地目录版只装一个；两个都装会出现两个面板，命令也会变成 `/quota:1` 和 `/quota:2`。
+Restart pi afterwards, or run `/reload` in an open session. Update with `pi update --extensions`. Install either the npm package or a local directory, not both: with both you get two panels, and the command becomes `/quota:1` and `/quota:2`.
 
-本地目录请用不带 `npm:` 前缀的路径形式：`pi install npm:./pi-quota` 能装上，但加载不了。
+Use the plain path form for a local directory: `pi install npm:./pi-quota` installs but does not load.
 
-环境要求：pi ≥ 1.5.0（已在 1.5.0 实测）。没有运行时依赖；只访问 `bigmodel.cn` 和 `api.github.com` 两个配额接口。
+Requirements: pi ≥ 1.5.0 (tested on 1.5.0). No runtime dependencies; the only network requests go to the two quota endpoints, `bigmodel.cn` and `api.github.com`.
 
-## 凭据
+## Credentials
 
-| Provider | 读取顺序 | 说明 |
+| Provider | Where it looks | Notes |
 |---|---|---|
-| 智谱 `zai-coding-cn` | 1. 环境变量 `ZAI_CODING_CN_API_KEY`<br>2. pi 的 `auth.json` 中 `zai-coding-cn` 条目（`/login zai-coding-cn` 存入的 API key） | `auth.json` 里 `!命令` 形式的 key 不会被执行，请改用环境变量 |
-| GitHub Copilot `github-copilot` | 只读 pi 的 `auth.json` 中 `github-copilot` OAuth 条目（`/login github-copilot`） | 用其中的 GitHub OAuth token（`ghu_…`），不用 Copilot 推理 token。不接受 API key 或环境变量，不支持 GitHub Enterprise |
+| Zhipu `zai-coding-cn` | 1. env `ZAI_CODING_CN_API_KEY`<br>2. the `zai-coding-cn` entry of pi's `auth.json` (the API key saved by `/login zai-coding-cn`) | A `!command` key in `auth.json` is not run; set the env variable instead |
+| GitHub Copilot `github-copilot` | only the `github-copilot` OAuth entry of pi's `auth.json` (`/login github-copilot`) | Uses its GitHub OAuth token (`ghu_…`), not the Copilot inference token. No API key or env substitute; GitHub Enterprise is not supported |
 
-- `auth.json` 的位置与 pi 一致：`PI_CODING_AGENT_DIR`，默认 `~/.pi/agent`。每次查询都会重新读取，`/login` 之后立即生效。
-- Copilot token 过期或被吊销（HTTP 401）时显示 `✗ auth`，并提示重新执行 `/login github-copilot`。插件不会自行刷新 token。
-- key 和 token 不会出现在任何错误信息或通知里：所有错误文本都先脱敏再显示。
+- `auth.json` is where pi keeps it: `PI_CODING_AGENT_DIR`, by default `~/.pi/agent`. It is read on every check, so a new `/login` applies at once.
+- When the Copilot token has expired or been revoked (HTTP 401), the row shows `✗ auth` and asks you to run `/login github-copilot` again. The extension never refreshes tokens itself.
+- Keys and tokens never appear in an error or a notification: every error text is redacted before it is shown.
 
-## 命令
+## Commands
 
-| 命令 | 作用 |
+Type `/quota ` to see every argument with a description.
+
+| Command | What it does |
 |---|---|
-| `/quota` | 完整报告：各窗口余量、用量、重置时间（本地时间 + 倒计时）、节奏（pace）分析、提醒设置 |
-| `/quota status` | 单行摘要，最紧张的窗口排在最前（出错的 provider 排在最前面） |
-| `/quota refresh` | 清缓存，立即重查 |
-| `/quota mute <five-hour\|weekly>` | 静音该窗口，不再发它的警告和 “Quota available”（也可写 `5h` / `wk`） |
-| `/quota unmute <five-hour\|weekly>` | 取消静音 |
-| `/quota hide` / `/quota show` | 隐藏 / 显示常驻面板（隐藏时后台监控与提醒照常） |
+| `/quota` | Full report: each window's percent left, usage, reset time (local time and countdown), pace analysis and the alert settings |
+| `/quota status` | One-line summary, tightest window first (a failing provider comes first) |
+| `/quota refresh` | Drop the cache and check again now |
+| `/quota config` | Settings menu: language, quota panel, alerts per window; each pick applies at once |
+| `/quota lang [en\|zh]` | Set the language, or pick it from a list |
+| `/quota mute <five-hour\|weekly>` | Mute a window: no more warnings or "Quota available" for it (`5h` / `wk` work too) |
+| `/quota unmute <five-hour\|weekly>` | Unmute it |
+| `/quota hide` / `/quota show` | Hide or show the quota panel (monitoring and alerts go on while it is hidden) |
 
-## 监控与通知规则
+## How it monitors
 
-- **何时检查**：会话开始、每次 `turn_end`，以及每 60 秒定时（每次检查后重新计时，先到先查）。成功结果缓存 60 秒，所以频繁的 `turn_end` 不会频繁请求 API；失败不缓存，下次检查重试。两个 provider 并发查询，各自 8 秒超时，互不影响。
-- **警告**：5 小时窗口或周窗口剩余 **< 20%** 时发出 warning。同一个窗口周期（以重置时间区分）只警告一次。按当前速度会在重置前用完时（且窗口已过去 10% 以上），附上 “按当前速度约 X 后耗尽”。
-- **恢复**：曾经低于 20% 的窗口回到 **≥ 50%** 时，发出 `✅ Quota available`，同样每个窗口只发一次。空闲时由定时检查发出，不必等下一次对话。
-- **不参与提醒**：MCP 月度配额（计量方式不同）和 Copilot 月度额度只在面板里显示。
-- 已发过的提醒记录在磁盘上，重启 pi、`/new` 或同时开多个会话，都不会重复发同一条警告。
-- 子代理进程（`PI_SUBAGENT_CHILD=1`）里不运行；`pi --offline`（`PI_OFFLINE`）下不做后台查询，只在执行 `/quota` 时查询。
+- **When it checks**: at session start, after every `turn_end`, and every 60 seconds (each check restarts the timer, whichever comes first). A successful answer is cached for 60 s, so frequent turn ends do not flood the APIs; a failure is not cached and is retried on the next check. Both providers are asked in parallel, each with an 8 s timeout.
+- **Warnings**: a 5-hour or weekly window **under 20%** gets one warning per window (a window is told apart by its reset time). When the current pace would use it up before the reset (and more than 10% of the window has passed), the warning adds "at this pace it runs out in about X".
+- **Recovery**: a window that was under 20% and is back at **50% or more** gets `✅ Quota available`, also once per window. While you are idle the timer delivers it; no need to send another prompt.
+- **No alerts**: the MCP monthly allowance (counted differently) and Copilot's monthly credits are shown in the panel only.
+- Sent alerts are remembered on disk, so restarting pi, `/new` or several sessions at once never repeat the same warning.
+- It does not run in subagent processes (`PI_SUBAGENT_CHILD=1`); under `pi --offline` (`PI_OFFLINE`) it makes no background requests and checks only when you run `/quota`.
 
-## 配置
+## Configuration
 
-`~/.pi/agent/pi-quota/config.json`。命令会自动写入，也可以手动编辑：
+`~/.pi/agent/pi-quota/config.json`. The commands write it for you; you can also edit it by hand:
 
 ```json
 {
+  "language": "en",
   "hidden": false,
   "muted": ["five-hour"],
   "warnBelow": 20,
@@ -90,48 +99,52 @@ pi -e npm:@jack-yang/pi-quota          # 只在本次启动试用，不写入 se
 }
 ```
 
-| 字段 | 默认 | 含义 |
+| Field | Default | Meaning |
 |---|---|---|
-| `hidden` | `false` | 面板是否隐藏（`/quota hide\|show`） |
-| `muted` | `[]` | 已静音的窗口（`/quota mute\|unmute`） |
-| `warnBelow` | `20` | 剩余低于这个百分比时警告，取值 (0, 100] |
-| `recoverAt` | `50` | 警告过的窗口回到这个百分比及以上时，发 Quota available |
+| `language` | `"en"` | `"en"` or `"zh"` (`/quota lang`, `/quota config`) |
+| `hidden` | `false` | Whether the panel is hidden (`/quota hide\|show`) |
+| `muted` | `[]` | Muted windows (`/quota mute\|unmute`) |
+| `warnBelow` | `20` | Warn when less than this percent is left, in (0, 100] |
+| `recoverAt` | `50` | Say "Quota available" when a warned window is back at this percent or more |
 
-同目录的 `state.json` 记录已发过的提醒（自动维护；删除即可重置）。
+`state.json` next to it remembers the alerts already sent (kept up to date automatically; delete it to start over).
 
-## 与 opencode-quota 的差异
+The `/quota` command's own line in the `/` menu takes the language at load; after a language change it follows on the next `/reload` or restart. Everything else switches at once.
 
-照抄的部分：pace 预测的全部逻辑和常量；智谱按 unit 3 / 6 / TIME_LIMIT 分窗口、解析和错误处理；Copilot `copilot_internal/user` 的五个解析分支和请求头；倒计时的分钟向上取整。
+## Differences from opencode-quota
 
-| 原版 | 本扩展 | 原因 |
+Kept as in the original: the whole pace model and its constants; Zhipu's window split by unit 3 / 6 / TIME_LIMIT, its parsing and error handling; the five parsing branches and request headers of Copilot's `copilot_internal/user`; countdowns that round partial minutes up.
+
+| Original | pi-quota | Why |
 |---|---|---|
-| 智谱接口不检查 `success:false`，失败时显示 “Invalid quota data” | 检查 `success:false` / `code ≥ 400`，1000–1004 归为 auth | bigmodel.cn 对错误 key 返回 HTTP 200 加 `{"code":1000,"success":false}` |
-| 智谱发不带前缀的 key，Copilot 用 `token <t>` | 都用 `Bearer` | 两个接口实测都接受 |
-| Copilot 未超额时单位标为中性的 “Premium interactions” | 按 `token_based_billing`：true 为 “AI credits”，false 为 “premium requests” | 区分新计费和旧计费；数值计算不变，不会把 credits 标成 PRU |
-| Copilot 支持 PAT、账单报表、预算、GHE、组织/企业计费、多账号 | 只支持个人订阅 + pi 的 OAuth token | 范围裁剪 |
-| Reset notice：任意窗口重置都可以通知 | 窗口曾低于 20%、又回到 ≥ 50% 时才发 “Quota available” | 只在真正可用时提醒 |
-| 没有 “低于阈值” 警告 | 5h / 周窗口低于 20% 时警告一次，附耗尽预测 | 本扩展的核心功能 |
-| 快照文件 + 文件锁，失败按 1–15 min 退避 | 内存缓存：成功 60 s、失败不缓存 | 更简单，失败下次检查即重试 |
-| 窗口身份按观测时间判定 | 以 `resetsAt` 为窗口标识，相差 ±2 分钟视为同一窗口 | 实测接口的重置时间会抖动 1 ms |
-| 倒计时 `2d5h14m` 或 `3.5h` | 面板用 `14m` / `3h12m` / `4d`，报告用 `2d 5h 14m` | 面板更紧凑 |
+| The Zhipu reply's `success:false` is not checked; a failure shows "Invalid quota data" | `success:false` / `code ≥ 400` are checked; codes 1000–1004 count as auth errors | bigmodel.cn answers a wrong key with HTTP 200 and `{"code":1000,"success":false}` |
+| Zhipu gets the bare key, Copilot `token <t>` | `Bearer` for both | Both endpoints accept it (tested) |
+| Copilot within its allowance is labelled with a neutral "Premium interactions" | By `token_based_billing`: true → "AI credits", false → "premium requests" | Tells new from legacy billing; the numbers are unchanged, and credits are never called PRUs |
+| Copilot: PAT, billing reports, budgets, GHE, organization / enterprise billing, several logins | Personal subscription with pi's OAuth token only | Scope |
+| Reset notice whenever any window resets | "Quota available" only for a window that was under 20% and is back at ≥ 50% | Tell you when it matters |
+| No "under the threshold" warning | One warning when a 5h / weekly window drops under 20%, with the run-out forecast | The point of this extension |
+| Snapshot file with a file lock; failures back off 1–15 min | In-memory cache: 60 s for success, failures not cached | Simpler; a failure is retried on the next check |
+| Window identity from observation times | A window is known by its `resetsAt`; reset times within ±2 min are the same window | The endpoint's reset time jitters by 1 ms between calls |
+| Countdown `2d5h14m` or `3.5h` | `⏳ 14m` / `⏳ 3h12m` / `⏳ 4d` in the panel, `2d 5h 14m` in the report | More compact panel |
+| English only | English and Simplified Chinese (`/quota lang`) | |
 
-未移植：其余 20 多个 provider、Web / Desktop / GUI、设置页、远程 provider 目录、导出文件、多账号、会话 token 统计。
+Not ported: the 20+ other providers, the Web / Desktop / GUI surfaces, the settings page, the remote provider catalog, the export file, multiple accounts, session token counts.
 
-## 已知限制
+## Known limitations
 
-- Copilot 月度额度和 MCP 只显示、不提醒。
-- Copilot 和 MCP 没有固定的窗口长度，所以不计算节奏（pace）；智谱也不返回窗口起点，起点用 “重置时间 − 窗口长度” 推算。
-- 已发提醒的记录是一个小文件，读写时不加锁：多个 pi 会话恰好同时检查时，有极小概率重复一次提醒。
-- 不支持 Z.ai 国际版（`zai`）；界面文字为中文。
+- Copilot's monthly credits and the MCP allowance are shown but never alert.
+- Copilot and MCP windows have no fixed length, so they have no pace; Zhipu does not report a window start either, so it is taken as "reset time − window length".
+- Sent alerts are remembered in one small file without a lock: when several pi sessions check at the very same moment, a warning may very rarely repeat once.
+- Z.ai global (`zai`) is not supported.
 
-## 开发
+## Development
 
 ```bash
-npm test                            # node --test，不需要安装依赖（Node ≥ 22.19）
-npm install && npm run typecheck    # 可选：tsc 严格检查，会装上 pi 作为 peer 依赖以获得类型
-pi -e .                             # 在真实会话中试用
+npm test                            # node --test, no install needed (Node ≥ 22.19)
+npm install && npm run typecheck    # optional: strict tsc; installs pi as the peer dependency for its types
+pi -e .                             # try it in a real session
 ```
 
-## 许可证
+## License
 
-MIT。部分代码改编自 [opencode-quota](https://github.com/slkiser/opencode-quota)（MIT），见 [LICENSE](./LICENSE)。
+MIT. Parts are adapted from [opencode-quota](https://github.com/slkiser/opencode-quota) (MIT); see [LICENSE](./LICENSE).

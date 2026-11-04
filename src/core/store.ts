@@ -10,6 +10,7 @@
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { DEFAULT_LOCALE, isLocale, type Locale } from "../i18n.ts";
 import type { AlertState, WindowAlertState } from "./alerts.ts";
 import { isJsonObject, type JsonObject, type JsonValue, parseJson } from "./json.ts";
 import { safeErrorText } from "./redact.ts";
@@ -108,6 +109,8 @@ export class QuotaCache {
 // ---- settings and alert state on disk ------------------------------------------------------
 
 export type QuotaConfig = {
+  /** `/quota lang`: the language of everything pi-quota shows. */
+  language: Locale;
   /** `/quota hide`: no widget; checks and alerts go on. */
   hidden: boolean;
   /** `/quota mute <window>`: windows that send no warning and no "Quota available". */
@@ -119,6 +122,7 @@ export type QuotaConfig = {
 };
 
 export const DEFAULT_CONFIG: Readonly<QuotaConfig> = {
+  language: DEFAULT_LOCALE,
   hidden: false,
   muted: [],
   warnBelow: 20,
@@ -141,6 +145,7 @@ export function parseConfig(raw: JsonValue | undefined): QuotaConfig {
   const value: JsonObject = isJsonObject(raw) ? raw : {};
   const muted = Array.isArray(value.muted) ? value.muted.filter(isAlertWindow) : [];
   return {
+    language: isLocale(value.language) ? value.language : DEFAULT_CONFIG.language,
     hidden: value.hidden === true,
     muted: [...new Set(muted)],
     warnBelow: percentSetting(value.warnBelow, DEFAULT_CONFIG.warnBelow),

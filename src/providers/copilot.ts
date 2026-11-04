@@ -134,16 +134,14 @@ export function parseCopilotInternalUser(response: CopilotInternalUserResponse):
   throw new Error("GitHub Copilot user response did not include a usable quota snapshot");
 }
 
-const COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
-
-/** The quota as this extension's result: one row with a percent, else a note. */
+/** The quota as this extension's result: one row with a percent, else a note (worded at display). */
 export function copilotResult(quota: CopilotQuota): ProviderResult {
   const plan = quota.plan ? { plan: quota.plan } : {};
-  if (quota.mode === "plan_only") return { ok: true, rows: [], note: "仅有套餐信息，无用量数据", ...plan };
+  if (quota.mode === "plan_only") return { ok: true, rows: [], note: { kind: "plan_only" }, ...plan };
   const label = COPILOT_UNIT_LABELS[quota.unit];
-  if (quota.mode === "unlimited") return { ok: true, rows: [], note: `${label} 不限量`, ...plan };
+  if (quota.mode === "unlimited") return { ok: true, rows: [], note: { kind: "unlimited", label }, ...plan };
   if (quota.percentRemaining === undefined) {
-    return { ok: true, rows: [], note: `已用 ${COUNT.format(quota.used)} ${label}（无剩余百分比）`, ...plan };
+    return { ok: true, rows: [], note: { kind: "used_only", used: quota.used, label }, ...plan };
   }
   return {
     ok: true,
@@ -184,7 +182,7 @@ function requestError(failure: RequestFailure, secrets: readonly string[]): Quot
   const head = `${API} error ${status}${words ? `: ${words}` : ""}`;
   if (status === 401) {
     // An expired or revoked OAuth login: pi-quota does not refresh tokens itself.
-    return { kind: "auth", status, message: `${head} — 请在 pi 中重新 /login github-copilot` };
+    return { kind: "auth", status, message: head, hint: "copilot_relogin" };
   }
   if (status === 429 || (status === 403 && failure.headers?.get("x-ratelimit-remaining") === "0")) {
     return { kind: "rate_limited", status, message: `${head} (GitHub API rate limit exhausted)` };

@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isJsonObject, type JsonObject, type JsonValue, jsonText as text, parseJson } from "./core/json.ts";
-import type { QuotaError } from "./core/types.ts";
+import type { ErrorHint, QuotaError } from "./core/types.ts";
 
 export const ZHIPU_KEY_ENV = "ZAI_CODING_CN_API_KEY";
 export const ZHIPU_AUTH_ID = "zai-coding-cn";
@@ -50,13 +50,14 @@ function readAuthEntry(sources: AuthSources, providerId: string): JsonObject | u
   return isJsonObject(entry) ? entry : undefined;
 }
 
-function authError(message: string): Credential {
-  return { ok: false, error: { kind: "auth", message } };
+/** A credential that exists but cannot be used; `hint` says what to do, in the user's language. */
+function authError(hint: ErrorHint): Credential {
+  return { ok: false, error: { kind: "auth", message: "", hint } };
 }
 
 /** No credential at all: the provider is not in use, so it stays out of sight (see QuotaErrorKind). */
-function notConfigured(message: string): Credential {
-  return { ok: false, error: { kind: "not_configured", message } };
+function notConfigured(hint: ErrorHint): Credential {
+  return { ok: false, error: { kind: "not_configured", message: "", hint } };
 }
 
 export function resolveZhipuKey(sources: AuthSources): Credential {
@@ -65,14 +66,10 @@ export function resolveZhipuKey(sources: AuthSources): Credential {
 
   const entry = readAuthEntry(sources, ZHIPU_AUTH_ID);
   const key = entry?.type === "api_key" ? text(entry.key) : "";
-  if (key.startsWith("!")) {
-    // pi runs such a command itself; pi-quota does not run shell commands from auth.json.
-    return authError(
-      `auth.json 中 ${ZHIPU_AUTH_ID} 的 key 是 !命令 形式，pi-quota 不执行命令；请改设 ${ZHIPU_KEY_ENV}`,
-    );
-  }
+  // pi runs a "!command" key itself; pi-quota does not run shell commands from auth.json.
+  if (key.startsWith("!")) return authError("zhipu_command_key");
   if (key) return { ok: true, secret: key, source: "auth.json" };
-  return notConfigured(`未配置智谱 API key：设置 ${ZHIPU_KEY_ENV}，或在 pi 中 /login ${ZHIPU_AUTH_ID}`);
+  return notConfigured("zhipu_setup");
 }
 
 /** True for a GitHub Enterprise host; personal github.com is the only supported deployment. */
@@ -88,18 +85,10 @@ function isEnterpriseHost(value: JsonValue | undefined): boolean {
 
 export function resolveCopilotToken(sources: AuthSources): Credential {
   const entry = readAuthEntry(sources, COPILOT_AUTH_ID);
-  if (!entry) return notConfigured(`未登录 GitHub Copilot：请在 pi 中运行 /login ${COPILOT_AUTH_ID}`);
-  if (entry.type !== "oauth") {
-    return authError(
-      `auth.json 的 ${COPILOT_AUTH_ID} 不是 OAuth 登录（不接受 API key）：请 /login ${COPILOT_AUTH_ID}`,
-    );
-  }
-  if (isEnterpriseHost(entry.enterpriseUrl)) {
-    return authError("暂不支持 GitHub Enterprise 账号的 Copilot 配额（仅个人订阅）");
-  }
+  if (!entry) return notConfigured("copilot_login");
+  if (entry.type !== "oauth") return authError("copilot_not_oauth");
+  if (isEnterpriseHost(entry.enterpriseUrl)) return authError("copilot_enterprise");
   const token = text(entry.refresh);
-  if (!token) {
-    return authError(`${COPILOT_AUTH_ID} 登录缺少 GitHub OAuth token：请重新 /login ${COPILOT_AUTH_ID}`);
-  }
+  if (!token) return authError("copilot_no_token");
   return { ok: true, secret: token, source: "auth.json" };
 }

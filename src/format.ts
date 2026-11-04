@@ -1,12 +1,14 @@
 /**
  * Everything the user reads: bars, countdowns, widget lines, the one-line status, the full report
- * and the alert messages. Pure: data and the clock in, plain text out (the caller adds colors).
+ * and the alert messages, in the user's language (src/i18n.ts). Pure: data, the clock and the
+ * locale in, plain text out (the caller adds colors).
  */
 import type { Alert } from "./core/alerts.ts";
 import { type Pace, paceOf } from "./core/pace.ts";
 import type { QuotaConfig } from "./core/store.ts";
-import type { ProviderId, ProviderReport, QuotaError, QuotaRow, QuotaWindow } from "./core/types.ts";
+import type { ProviderId, ProviderReport, QuotaError, QuotaRow } from "./core/types.ts";
 import { WINDOWS } from "./core/windows.ts";
+import { type Locale, type Messages, messages } from "./i18n.ts";
 
 export const PROVIDER_NAMES: Readonly<Record<ProviderId, string>> = {
   "zai-coding-cn": "Zhipu",
@@ -18,12 +20,8 @@ const PROVIDER_TITLES: Readonly<Record<ProviderId, string>> = {
   "github-copilot": "GitHub Copilot",
 };
 
-/** Window names in sentences ("Zhipu 5h 窗口配额仅剩 15%"). */
-const WINDOW_WORDS: Readonly<Record<QuotaWindow, string>> = {
-  "five-hour": "5h 窗口",
-  weekly: "周窗口",
-  "mcp-monthly": "MCP 月度",
-};
+/** Marks a reset countdown: an hourglass still running, then a space ("⏳ 3h12m"). */
+export const RESET_ICON = "⏳";
 
 const MINUTE_MS = 60_000;
 /** Widget columns: the provider name, then the window. */
@@ -31,7 +29,6 @@ const NAME_WIDTH = 8;
 const WINDOW_WIDTH = 4;
 /** Under this percent a row is drawn as a warning, under `warnBelow` as low. */
 const WARNING_TONE_BELOW = 50;
-const FAST_MARK = "⚠ 快于正常";
 
 /** A percent as a whole number from 0 to 100: display rounds and clamps. */
 export function displayPercent(percent: number): number {
@@ -48,7 +45,7 @@ export function bar(percent: number, width = 10): string {
 /**
  * A duration as opencode-quota's `formatResetCountdown` wrote it; partial minutes round up so it
  * never understates the time left. "compact": "14m", "3h12m", and from one day on whole days "4d"
- * (its compact day style); "exact": "14m", "3h 12m", "2d 5h 14m".
+ * (its compact day style); "exact": "14m", "3h 12m", "2d 5h 14m". The same in every language.
  */
 export function formatDuration(ms: number, style: "compact" | "exact" = "compact"): string {
   const minutes = Math.max(1, Math.ceil(ms / MINUTE_MS));
@@ -75,11 +72,16 @@ export function formatResetCountdown(
   return formatDuration(diffMs, style);
 }
 
-/** The few words an error shows in the widget: "auth", "timeout", "http 500". */
-export function shortReason(error: QuotaError): string {
+/** "⏳ 3h12m", or "" without a reset time. */
+function resetMark(countdown: string): string {
+  return countdown ? `${RESET_ICON} ${countdown}` : "";
+}
+
+/** The few words an error shows in the widget: "auth", "timeout", "http 500"; codes, not prose. */
+export function shortReason(error: QuotaError, locale: Locale): string {
   switch (error.kind) {
     case "not_configured":
-      return "未配置";
+      return messages(locale).notSetUp;
     case "auth":
       return "auth";
     case "timeout":
@@ -104,6 +106,12 @@ export function shortReason(error: QuotaError): string {
   }
 }
 
+/** An error's whole text: the provider's own words, then what to do, in the user's language. */
+export function errorText(error: QuotaError, locale: Locale): string {
+  const hint = error.hint ? messages(locale).hints[error.hint] : "";
+  return [error.message, hint].filter(Boolean).join(" — ");
+}
+
 /** A fast pace worth showing: past the first tenth of the window (the original's level rule). */
 function isFast(pace: Pace | undefined): boolean {
   return pace?.kind === "fast" && !pace.early;
@@ -122,14 +130,13 @@ function namePart(provider: ProviderId): string {
   return PROVIDER_NAMES[provider].padEnd(NAME_WIDTH);
 }
 
-/** "Zhipu   5h  ▰▰▰▰▰▰▱▱▱▱  62%  ↻3h12m  ⚠ 快于正常" */
-export function rowLine(row: QuotaRow, nowMs: number): string {
+/** "Zhipu   5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ 3h12m  ⚠ fast" */
+export function rowLine(row: QuotaRow, nowMs: number, locale: Locale): string {
   const window = (row.window ? WINDOWS[row.window].short : "").padEnd(WINDOW_WIDTH);
   const percent = `${displayPercent(row.percentRemaining)}%`.padStart(4);
-  const countdown = formatResetCountdown(row.resetsAt, nowMs);
-  const reset = countdown ? `  ↻${countdown}` : "";
-  const fast = isFast(paceOf(row, nowMs)) ? `  ${FAST_MARK}` : "";
-  return `${namePart(row.provider)}${window}${bar(row.percentRemaining)} ${percent}${reset}${fast}`;
+  const reset = resetMark(formatResetCountdown(row.resetsAt, nowMs));
+  const fast = isFast(paceOf(row, nowMs)) ? `  ${messages(locale).fastMark}` : "";
+  return `${namePart(row.provider)}${window}${bar(row.percentRemaining)} ${percent}${reset ? `  ${reset}` : ""}${fast}`;
 }
 
 /** At most this many lines per provider (5h, weekly, MCP). */
@@ -140,26 +147,32 @@ function notInUse(report: ProviderReport | undefined): boolean {
   return report !== undefined && !report.ok && report.error.kind === "not_configured";
 }
 
+/** A provider's note, or "no quota data" when it has neither rows nor a note. */
+function noteText(report: Extract<ProviderReport, { ok: true }>, m: Messages): string {
+  return report.note ? m.note(report.note) : m.noData;
+}
+
 /**
  * The resident widget: each provider's windows, its error ("Zhipu   ✗ auth"), its note when it
- * has no percent, or "查询中" before its first answer. Providers without a credential are left out;
- * with none configured the widget is empty.
+ * has no percent, or "checking" before its first answer. Providers without a credential are left
+ * out; with none configured the widget is empty.
  */
 export function widgetLines(
   providers: readonly ProviderId[],
   reports: readonly ProviderReport[] | undefined,
-  options: { nowMs: number; warnBelow: number },
+  options: { nowMs: number; warnBelow: number; locale: Locale },
 ): DisplayLine[] {
+  const m = messages(options.locale);
   return providers.flatMap((provider): DisplayLine[] => {
     const report = reports?.find((item) => item.provider === provider);
-    if (!report) return [{ text: `${namePart(provider)}… 查询中`, tone: "normal" }];
+    if (!report) return [{ text: `${namePart(provider)}${m.checking}`, tone: "normal" }];
     if (notInUse(report)) return [];
-    if (!report.ok) return [{ text: `${namePart(provider)}✗ ${shortReason(report.error)}`, tone: "error" }];
-    if (report.rows.length === 0) {
-      return [{ text: `${namePart(provider)}— ${report.note ?? "无配额数据"}`, tone: "normal" }];
+    if (!report.ok) {
+      return [{ text: `${namePart(provider)}✗ ${shortReason(report.error, options.locale)}`, tone: "error" }];
     }
+    if (report.rows.length === 0) return [{ text: `${namePart(provider)}— ${noteText(report, m)}`, tone: "normal" }];
     return report.rows.slice(0, MAX_ROWS_PER_PROVIDER).map((row) => ({
-      text: rowLine(row, options.nowMs),
+      text: rowLine(row, options.nowMs, options.locale),
       tone: rowTone(row, paceOf(row, options.nowMs), options.warnBelow),
     }));
   });
@@ -176,27 +189,29 @@ export function statusLine(
   reports: readonly ProviderReport[],
   options: { nowMs: number; config: QuotaConfig },
 ): string {
+  const { config } = options;
+  const m = messages(config.language);
   const parts: Array<{ rank: number; text: string }> = [];
   for (const report of reports) {
     if (notInUse(report)) continue;
     const name = PROVIDER_NAMES[report.provider];
     if (!report.ok) {
-      parts.push({ rank: -1, text: `${name} ✗ ${shortReason(report.error)}` });
+      parts.push({ rank: -1, text: `${name} ✗ ${shortReason(report.error, config.language)}` });
       continue;
     }
-    if (report.rows.length === 0) parts.push({ rank: 101, text: `${name} ${report.note ?? "无配额数据"}` });
+    if (report.rows.length === 0) parts.push({ rank: 101, text: `${name} ${noteText(report, m)}` });
     for (const row of report.rows) {
-      const countdown = formatResetCountdown(row.resetsAt, options.nowMs);
+      const reset = resetMark(formatResetCountdown(row.resetsAt, options.nowMs));
       const fast = isFast(paceOf(row, options.nowMs)) ? " ⚠" : "";
       parts.push({
         rank: row.percentRemaining,
-        text: `${shortName(row)} ${displayPercent(row.percentRemaining)}%${countdown ? ` ↻${countdown}` : ""}${fast}`,
+        text: `${shortName(row)} ${displayPercent(row.percentRemaining)}%${reset ? ` ${reset}` : ""}${fast}`,
       });
     }
   }
   parts.sort((a, b) => a.rank - b.rank);
-  const muted = options.config.muted.length > 0 ? ` · 静音 ${options.config.muted.join(",")}` : "";
-  return `配额：${parts.map((part) => part.text).join(" · ") || "未配置任何 provider（/quota 查看配置方法）"}${muted}`;
+  const muted = config.muted.length > 0 ? m.statusMuted(config.muted.join(",")) : "";
+  return `${m.statusLine(parts.map((part) => part.text).join(" · ") || m.statusNothing)}${muted}`;
 }
 
 function pad2(value: number): string {
@@ -212,14 +227,15 @@ export function clockTime(ms: number, nowMs: number): string {
 }
 
 /** The pace analysis of a window, for the full report. */
-export function paceText(pace: Pace | undefined): string | undefined {
+export function paceText(pace: Pace | undefined, locale: Locale): string | undefined {
   if (!pace) return undefined;
-  const even = `均匀线 ${Math.round(pace.evenLeft)}%`;
-  if (pace.kind === "spare") return `节奏：有富余（${even}）`;
-  if (pace.kind === "on_track") return `节奏：正常（${even}）`;
-  if (pace.early) return `节奏：偏快，窗口刚开始暂不预测（${even}）`;
-  if (pace.runsOutInMs === undefined) return `节奏：已耗尽（${even}）`;
-  return `节奏：偏快，按当前速度约 ${formatDuration(pace.runsOutInMs)} 后耗尽（${even}）`;
+  const m = messages(locale);
+  const even = Math.round(pace.evenLeft);
+  if (pace.kind === "spare") return m.paceSpare(even);
+  if (pace.kind === "on_track") return m.paceOnTrack(even);
+  if (pace.early) return m.paceEarly(even);
+  if (pace.runsOutInMs === undefined) return m.paceUsedUp(even);
+  return m.paceFast(formatDuration(pace.runsOutInMs), even);
 }
 
 const COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -228,6 +244,22 @@ const COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 function amountText(row: QuotaRow): string {
   if (row.used === undefined || row.limit === undefined) return "";
   return `${COUNT.format(row.used)}/${COUNT.format(row.limit)}${row.label ? ` ${row.label}` : ""}`;
+}
+
+/** One window of the full report, then its pace analysis when it has one. */
+function reportRow(row: QuotaRow, nowMs: number, config: QuotaConfig, m: Messages): string[] {
+  const window = (row.window ? WINDOWS[row.window].short : "").padEnd(WINDOW_WIDTH);
+  const percent = `${displayPercent(row.percentRemaining)}%`.padStart(4);
+  const amount = amountText(row);
+  const resetMs = Date.parse(row.resetsAt ?? "");
+  const reset = Number.isFinite(resetMs)
+    ? `  ${RESET_ICON} ${m.resetAt(clockTime(resetMs, nowMs), formatResetCountdown(row.resetsAt, nowMs, "exact"))}`
+    : "";
+  const muted = row.window && (config.muted as readonly string[]).includes(row.window) ? `  ${m.reportMuted}` : "";
+  const lines = [`  ${window}${bar(row.percentRemaining)} ${percent}${amount ? `  ${amount}` : ""}${reset}${muted}`];
+  const pace = paceText(paceOf(row, nowMs), config.language);
+  if (pace) lines.push(`        ${pace}`);
+  return lines;
 }
 
 /**
@@ -240,70 +272,59 @@ export function fullReport(
   options: { nowMs: number; config: QuotaConfig },
 ): string[] {
   const { nowMs, config } = options;
-  const lines = [`pi-quota 配额报告 · ${clockTime(nowMs, nowMs)}`];
+  const m = messages(config.language);
+  const lines = [m.reportTitle(clockTime(nowMs, nowMs))];
   for (const provider of providers) {
     const report = reports.find((item) => item.provider === provider);
     const title = PROVIDER_TITLES[provider];
     if (!report) {
-      lines.push(`${title} · 查询中`);
+      lines.push(`${title} · ${m.reportChecking}`);
       continue;
     }
     if (!report.ok) {
-      const state = report.error.kind === "not_configured" ? "未配置" : `✗ ${shortReason(report.error)}`;
-      lines.push(`${title} · ${state}`, `  ${report.error.message}`);
+      const state = report.error.kind === "not_configured" ? m.notSetUp : `✗ ${shortReason(report.error, config.language)}`;
+      lines.push(`${title} · ${state}`, `  ${errorText(report.error, config.language)}`);
       continue;
     }
     lines.push(report.plan ? `${title} · ${report.plan}` : title);
-    if (report.rows.length === 0) lines.push(`  ${report.note ?? "无配额数据"}`);
-    for (const row of report.rows) {
-      const window = (row.window ? WINDOWS[row.window].short : "").padEnd(WINDOW_WIDTH);
-      const percent = `${displayPercent(row.percentRemaining)}%`.padStart(4);
-      const amount = amountText(row);
-      const resetMs = Date.parse(row.resetsAt ?? "");
-      const reset = Number.isFinite(resetMs)
-        ? `  ↻ ${clockTime(resetMs, nowMs)}（${formatResetCountdown(row.resetsAt, nowMs, "exact")}）`
-        : "";
-      const mutedMark = row.window && (config.muted as readonly string[]).includes(row.window) ? "  [静音]" : "";
-      lines.push(`  ${window}${bar(row.percentRemaining)} ${percent}${amount ? `  ${amount}` : ""}${reset}${mutedMark}`);
-      const pace = paceText(paceOf(row, nowMs));
-      if (pace) lines.push(`        ${pace}`);
-    }
+    if (report.rows.length === 0) lines.push(`  ${noteText(report, m)}`);
+    for (const row of report.rows) lines.push(...reportRow(row, nowMs, config, m));
   }
-  const muted = config.muted.length > 0 ? config.muted.join(", ") : "无";
   lines.push(
-    `提醒：<${config.warnBelow}% 警告 · 回到 ≥${config.recoverAt}% 发 Quota available · 静音：${muted} · 面板：${config.hidden ? "隐藏" : "显示"}`,
+    m.reportSettings({
+      warnBelow: config.warnBelow,
+      recoverAt: config.recoverAt,
+      muted: config.muted,
+      hidden: config.hidden,
+    }),
   );
   return lines;
 }
 
-function alertName(row: QuotaRow): string {
-  return `${PROVIDER_NAMES[row.provider]} ${row.window ? WINDOW_WORDS[row.window] : ""}`;
-}
-
-/** "，1h20m 后重置" / "，即将重置" / "" without a reset time. */
-function resetClause(countdown: string): string {
-  if (countdown === "") return "";
-  if (countdown === "reset") return "，即将重置";
-  return `，${countdown} 后重置`;
+function alertName(row: QuotaRow, m: Messages): string {
+  return `${PROVIDER_NAMES[row.provider]} ${row.window ? m.windows[row.window] : ""}`.trimEnd();
 }
 
 /**
  * A warning: the percent left and the time to the reset, the run-out time when the pace is fast
  * past the window's first tenth, and how to mute it. pi shows it after "Warning: ".
  */
-export function warningMessage(alert: Extract<Alert, { kind: "warning" }>, nowMs: number): string {
+export function warningMessage(alert: Extract<Alert, { kind: "warning" }>, nowMs: number, locale: Locale): string {
   const { row, pace } = alert;
-  const percent = displayPercent(row.percentRemaining);
-  const reset = resetClause(formatResetCountdown(row.resetsAt, nowMs));
-  const head = percent <= 0 ? `${alertName(row)}配额已用尽${reset}` : `${alertName(row)}配额仅剩 ${percent}%${reset}`;
-  const runsOut =
-    pace?.kind === "fast" && !pace.early && pace.runsOutInMs !== undefined
-      ? `；按当前速度约 ${formatDuration(pace.runsOutInMs)} 后耗尽`
-      : "";
-  return `pi-quota · ${head}${runsOut}（/quota mute ${row.window} 可静音）`;
+  const m = messages(locale);
+  const runsOut = pace?.kind === "fast" && !pace.early && pace.runsOutInMs !== undefined;
+  return m.warning({
+    name: alertName(row, m),
+    percent: displayPercent(row.percentRemaining),
+    resetIn: formatResetCountdown(row.resetsAt, nowMs),
+    ...(runsOut && pace.runsOutInMs !== undefined ? { runsOutIn: formatDuration(pace.runsOutInMs) } : {}),
+    // Only five-hour and weekly rows alert (core/alerts.ts).
+    window: row.window === "weekly" ? "weekly" : "five-hour",
+  });
 }
 
-/** "✅ Quota available · Zhipu 5h 窗口已恢复至 100%" */
-export function recoveryMessage(alert: Extract<Alert, { kind: "recovered" }>): string {
-  return `✅ Quota available · ${alertName(alert.row)}已恢复至 ${displayPercent(alert.row.percentRemaining)}%`;
+/** "✅ Quota available · Zhipu 5h window is back to 100%" */
+export function recoveryMessage(alert: Extract<Alert, { kind: "recovered" }>, locale: Locale): string {
+  const m = messages(locale);
+  return m.recovered(alertName(alert.row, m), displayPercent(alert.row.percentRemaining));
 }

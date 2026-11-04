@@ -43,17 +43,40 @@ export type QuotaErrorKind =
   | "bad_data"
   | "internal";
 
+/**
+ * What the user can do about an error, as a code: the text is rendered in the user's language at
+ * display time (src/i18n.ts), so a language switch needs no new request.
+ */
+export type ErrorHint =
+  | "zhipu_setup"
+  | "zhipu_command_key"
+  | "copilot_login"
+  | "copilot_not_oauth"
+  | "copilot_enterprise"
+  | "copilot_no_token"
+  | "copilot_relogin";
+
 export type QuotaError = {
   kind: QuotaErrorKind;
-  /** One line, control characters removed and credentials redacted. */
+  /**
+   * Provider text, one line, control characters removed and credentials redacted, for example
+   * "Zhipu API error 1000: 身份验证失败。" (the API's own words); "" when the hint says it all.
+   */
   message: string;
+  hint?: ErrorHint;
   /** The HTTP status, or the API's own error code. */
   status?: number;
 };
 
+/** Why a provider answered without a percent to show (rendered in the user's language). */
+export type ProviderNote =
+  | { kind: "plan_only" }
+  | { kind: "unlimited"; label: string }
+  | { kind: "used_only"; used: number; label: string };
+
 /** One provider's answer: its rows (maybe none, with a note), or the error shown instead. */
 export type ProviderResult =
-  | { ok: true; rows: QuotaRow[]; plan?: string; note?: string }
+  | { ok: true; rows: QuotaRow[]; plan?: string; note?: ProviderNote }
   | { ok: false; error: QuotaError };
 
 /** A provider's answer as the store keeps it. */

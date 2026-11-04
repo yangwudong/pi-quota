@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { type ProviderFetcher, quotaPaths } from "../src/core/store.ts";
 import type { ProviderId, ProviderResult } from "../src/core/types.ts";
+import { messages } from "../src/i18n.ts";
 import {
-  COMMAND_USAGE,
+  COMMAND_ARGUMENTS,
   completeArguments,
   createMonitor,
   defaultFetchers,
@@ -19,18 +20,39 @@ import {
 const NOW = Date.parse("2026-11-03T12:00:00.000Z");
 const MINUTE = 60_000;
 const at = (minutes: number) => new Date(NOW + minutes * MINUTE).toISOString();
+const EN = messages("en");
+const ZH = messages("zh");
 
-function fakeUi() {
+/** A fake pi UI; `picks` answers its select() calls in order (undefined: the user cancels). */
+function fakeUi(picks: Array<string | undefined> | null = null) {
   const notes: Array<{ level: string; message: string }> = [];
   const widgets: Array<string[] | undefined> = [];
+  const menus: Array<{ title: string; options: string[] }> = [];
   const ui: MonitorUi = {
     notify: (message, level) => notes.push({ level, message }),
     setWidget: (key, lines) => {
       assert.equal(key, WIDGET_KEY);
       widgets.push(lines);
     },
+    ...(picks
+      ? {
+          select: async (title: string, options: string[]) => {
+            menus.push({ title, options });
+            const pick = picks.shift();
+            if (pick !== undefined) assert.ok(options.includes(pick), `"${pick}" is not offered in ${JSON.stringify(options)}`);
+            return pick;
+          },
+        }
+      : {}),
   };
-  return { ui, notes, widgets, widget: () => widgets.at(-1), warnings: () => notes.filter((n) => n.level === "warning") };
+  return {
+    ui,
+    notes,
+    widgets,
+    menus,
+    widget: () => widgets.at(-1),
+    warnings: () => notes.filter((n) => n.level === "warning"),
+  };
 }
 
 function fakeTimers() {
@@ -68,9 +90,13 @@ function fakeProviders() {
   return { answers, calls, fetchers, fiveHour };
 }
 
-function setup(options: { automatic?: boolean; agentDir?: string } = {}) {
-  const agentDir = options.agentDir ?? mkdtempSync(join(tmpdir(), "pi-quota-monitor-"));
+function setup(options: { automatic?: boolean; config?: Record<string, unknown> } = {}) {
+  const agentDir = mkdtempSync(join(tmpdir(), "pi-quota-monitor-"));
   const paths = quotaPaths(agentDir);
+  if (options.config) {
+    mkdirSync(paths.dir, { recursive: true });
+    writeFileSync(paths.config, JSON.stringify(options.config));
+  }
   const providers = fakeProviders();
   const timers = fakeTimers();
   const clock = { now: NOW };
@@ -82,19 +108,31 @@ function setup(options: { automatic?: boolean; agentDir?: string } = {}) {
       setTimer: timers.setTimer,
       ...(options.automatic === undefined ? {} : { automatic: options.automatic }),
     });
-  return { agentDir, paths, providers, timers, clock, make, monitor: make() };
+  const savedConfig = () => JSON.parse(readFileSync(paths.config, "utf8")) as Record<string, unknown>;
+  return { agentDir, paths, providers, timers, clock, make, savedConfig, monitor: make() };
 }
 
+const WIDGET_EN = ["Zhipu   5h  ▰▰▰▰▰▰▰▰▱▱  81%  ⏳ 2h30m", "Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ⏳ 27d"];
+
 describe("monitor: widget and refresh", () => {
-  it("draws a pending widget at once, then the windows; re-arms the 60 s timer", async () => {
+  it("draws a pending widget at once, then the windows (English by default); re-arms the 60 s timer", async () => {
     const { monitor, timers } = setup();
     const view = fakeUi();
     monitor.start(view.ui);
-    assert.deepEqual(view.widgets[0], ["Zhipu   … 查询中", "Copilot … 查询中"]);
+    assert.deepEqual(view.widgets[0], ["Zhipu   … checking", "Copilot … checking"]);
     await monitor.idle();
-    assert.deepEqual(view.widget(), ["Zhipu   5h  ▰▰▰▰▰▰▰▰▱▱  81%  ↻2h30m", "Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ↻27d"]);
+    assert.deepEqual(view.widget(), WIDGET_EN);
     assert.deepEqual(timers.live().map((timer) => timer.ms), [REFRESH_INTERVAL_MS]);
     assert.deepEqual(view.notes, []);
+    assert.equal(monitor.locale(), "en");
+  });
+
+  it("follows the saved language from the start", async () => {
+    const { monitor } = setup({ config: { language: "zh" } });
+    const view = fakeUi();
+    monitor.start(view.ui);
+    assert.deepEqual(view.widgets[0], ["Zhipu   … 查询中", "Copilot … 查询中"]);
+    assert.equal(monitor.locale(), "zh");
   });
 
   it("turn ends reuse the 60 s cache; the timer refreshes once it expired", async () => {
@@ -109,8 +147,7 @@ describe("monitor: widget and refresh", () => {
     }
     assert.equal(providers.calls["zai-coding-cn"], 1);
     clock.now = NOW + 61_000;
-    const timer = timers.live()[0];
-    timer?.run();
+    timers.live()[0]?.run();
     await monitor.idle();
     assert.equal(providers.calls["zai-coding-cn"], 2);
     assert.equal(timers.live().length, 1);
@@ -118,7 +155,7 @@ describe("monitor: widget and refresh", () => {
 
   it("an error shows as the provider's line and nothing breaks", async () => {
     const { monitor, providers } = setup();
-    providers.answers["zai-coding-cn"] = { ok: false, error: { kind: "auth", message: "未找到智谱 API key" } };
+    providers.answers["zai-coding-cn"] = { ok: false, error: { kind: "auth", message: "", hint: "zhipu_command_key" } };
     providers.answers["github-copilot"] = { ok: false, error: { kind: "timeout", message: "Request timeout after 8s" } };
     const view = fakeUi();
     monitor.start(view.ui);
@@ -142,25 +179,25 @@ describe("monitor: widget and refresh", () => {
     const view = fakeUi();
     monitor.start(view.ui);
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(view.widget(), ["Zhipu   … 查询中", "Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ↻27d"]);
+    assert.deepEqual(view.widget(), ["Zhipu   … checking", "Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ⏳ 27d"]);
     release({ ok: false, error: { kind: "timeout", message: "Zhipu API: Request timeout after 8s" } });
     await monitor.idle();
-    assert.deepEqual(view.widget(), ["Zhipu   ✗ timeout", "Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ↻27d"]);
+    assert.deepEqual(view.widget(), ["Zhipu   ✗ timeout", "Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ⏳ 27d"]);
   });
 
   it("a provider without any credential stays out of sight; with none there is no widget", async () => {
     const { monitor, providers } = setup();
-    providers.answers["zai-coding-cn"] = { ok: false, error: { kind: "not_configured", message: "未配置智谱 API key" } };
+    providers.answers["zai-coding-cn"] = { ok: false, error: { kind: "not_configured", message: "", hint: "zhipu_setup" } };
     const view = fakeUi();
     monitor.start(view.ui);
     await monitor.idle();
-    assert.deepEqual(view.widget(), ["Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ↻27d"]);
+    assert.deepEqual(view.widget(), ["Copilot     ▰▰▰▰▰▰▰▰▰▱  90%  ⏳ 27d"]);
 
-    providers.answers["github-copilot"] = { ok: false, error: { kind: "not_configured", message: "未登录 GitHub Copilot" } };
+    providers.answers["github-copilot"] = { ok: false, error: { kind: "not_configured", message: "", hint: "copilot_login" } };
     await monitor.command("refresh", view.ui);
     assert.equal(view.widget(), undefined);
     await monitor.command("", view.ui);
-    assert.match(view.notes.at(-1)?.message ?? "", /Zhipu GLM Coding Plan · 未配置\n  未配置智谱 API key/);
+    assert.match(view.notes.at(-1)?.message ?? "", /Zhipu GLM Coding Plan · not set up\n {2}Zhipu API key not set/);
   });
 
   it("stop() cancels the timer, and a check still in flight tells nobody", async () => {
@@ -202,7 +239,7 @@ describe("monitor: alerts", () => {
       await first.idle();
     }
     assert.equal(view.warnings().length, 1);
-    assert.match(view.warnings()[0]?.message ?? "", /^pi-quota · Zhipu 5h 窗口配额仅剩 15%/);
+    assert.match(view.warnings()[0]?.message ?? "", /^pi-quota · Zhipu 5h window: 15% left/);
     first.stop();
 
     const second = make();
@@ -212,14 +249,23 @@ describe("monitor: alerts", () => {
     assert.equal(view2.warnings().length, 0);
   });
 
+  it("warns in the user's language", async () => {
+    const { monitor, providers } = setup({ config: { language: "zh" } });
+    providers.fiveHour(15);
+    const view = fakeUi();
+    monitor.start(view.ui);
+    await monitor.idle();
+    assert.match(view.warnings()[0]?.message ?? "", /^pi-quota · Zhipu 5h 窗口配额仅剩 15%/);
+  });
+
   it("after /quota mute five-hour no warning comes; the choice is saved", async () => {
-    const { monitor, providers, paths, clock } = setup();
+    const { monitor, providers, savedConfig, clock } = setup();
     const view = fakeUi();
     monitor.start(view.ui);
     await monitor.idle();
     await monitor.command("mute five-hour", view.ui);
-    assert.match(view.notes.at(-1)?.message ?? "", /已静音 five-hour/);
-    assert.deepEqual(JSON.parse(readFileSync(paths.config, "utf8")).muted, ["five-hour"]);
+    assert.equal(view.notes.at(-1)?.message, EN.muted("five-hour"));
+    assert.deepEqual(savedConfig().muted, ["five-hour"]);
     providers.fiveHour(5);
     clock.now += 61_000;
     monitor.onTurnEnd(view.ui);
@@ -243,7 +289,7 @@ describe("monitor: alerts", () => {
     clock.now = NOW + 151 * MINUTE;
     timers.live()[0]?.run();
     await monitor.idle();
-    assert.deepEqual(view.notes.at(-1), { level: "info", message: "✅ Quota available · Zhipu 5h 窗口已恢复至 100%" });
+    assert.deepEqual(view.notes.at(-1), { level: "info", message: "✅ Quota available · Zhipu 5h window is back to 100%" });
   });
 
   it("a command's output carries a Quota available found by its own check (info lines replace each other in pi)", async () => {
@@ -258,40 +304,149 @@ describe("monitor: alerts", () => {
     const last = view.notes.at(-1);
     assert.equal(last?.level, "info");
     const [first, second] = last?.message.split("\n") ?? [];
-    assert.equal(first, "✅ Quota available · Zhipu 5h 窗口已恢复至 100%");
-    assert.match(second ?? "", /^配额：Copilot 90% ↻/);
+    assert.equal(first, "✅ Quota available · Zhipu 5h window is back to 100%");
+    assert.match(second ?? "", /^Quota: Copilot 90% ⏳ /);
   });
 
   it("with the threshold at 99 in config.json, 81% warns once (the acceptance simulation)", async () => {
-    const { monitor, paths } = setup();
-    mkdirSync(paths.dir, { recursive: true });
-    writeFileSync(paths.config, JSON.stringify({ warnBelow: 99 }));
+    const { monitor } = setup({ config: { warnBelow: 99 } });
     const view = fakeUi();
     monitor.start(view.ui);
     await monitor.idle();
     await monitor.command("refresh", view.ui);
     assert.equal(view.warnings().length, 1);
-    assert.match(view.warnings()[0]?.message ?? "", /配额仅剩 81%/);
+    assert.match(view.warnings()[0]?.message ?? "", /81% left/);
   });
 });
 
-describe("monitor: commands", () => {
-  it("completes /quota arguments, and offers nothing once an argument is complete", () => {
-    assert.deepEqual(completeArguments("")?.length, 8);
-    assert.deepEqual(completeArguments("mu"), ["mute five-hour", "mute weekly"]);
-    assert.deepEqual(completeArguments("st"), ["status"]);
+describe("monitor: the / menu", () => {
+  it("completes /quota arguments with descriptions in the user's language", () => {
+    assert.equal(completeArguments("")?.length, COMMAND_ARGUMENTS.length);
+    assert.deepEqual(completeArguments("mu"), [
+      { value: "mute five-hour", description: "no alerts for the 5h window" },
+      { value: "mute weekly", description: "no alerts for the weekly window" },
+    ]);
+    assert.deepEqual(completeArguments("con", "zh"), [{ value: "config", description: "设置：语言、面板、提醒" }]);
+    assert.deepEqual(completeArguments("lang ", "en")?.map((item) => item.value), ["lang en", "lang zh"]);
+  });
+
+  it("offers nothing once an argument is complete, so Enter runs it", () => {
     assert.equal(completeArguments("status"), null);
     assert.equal(completeArguments("mute weekly"), null);
     assert.equal(completeArguments("nope"), null);
   });
+
+  it("has a description for every argument in every language", () => {
+    for (const locale of ["en", "zh"] as const) {
+      for (const value of COMMAND_ARGUMENTS) {
+        assert.ok(messages(locale).argument[value], `${locale}: no description for "${value}"`);
+      }
+      assert.ok(messages(locale).commandDescription);
+    }
+  });
+});
+
+describe("monitor: language", () => {
+  it("/quota lang zh switches at once: the widget redraws, the choice is saved, it answers in Chinese", async () => {
+    const { monitor, savedConfig } = setup();
+    const view = fakeUi();
+    monitor.start(view.ui);
+    await monitor.idle();
+    await monitor.command("lang zh", view.ui);
+    assert.equal(savedConfig().language, "zh");
+    assert.equal(view.notes.at(-1)?.message, "pi-quota 语言：简体中文");
+    assert.equal(monitor.locale(), "zh");
+    await monitor.command("", view.ui);
+    assert.match(view.notes.at(-1)?.message ?? "", /^pi-quota 配额报告/);
+    await monitor.command("lang English", view.ui);
+    assert.equal(view.notes.at(-1)?.message, "pi-quota language: English");
+    assert.equal(savedConfig().language, "en");
+  });
+
+  it("/quota lang without a value asks with a picker", async () => {
+    const { monitor, savedConfig } = setup();
+    const view = fakeUi(["简体中文"]);
+    await monitor.command("lang", view.ui);
+    assert.deepEqual(view.menus, [{ title: "pi-quota language", options: ["English", "简体中文"] }]);
+    assert.equal(savedConfig().language, "zh");
+    // Cancelling the picker changes nothing.
+    const cancel = fakeUi([undefined]);
+    await monitor.command("lang", cancel.ui);
+    assert.equal(savedConfig().language, "zh");
+    assert.deepEqual(cancel.notes, []);
+  });
+
+  it("an unknown language, or no picker to ask with, shows the usage", async () => {
+    const { monitor } = setup();
+    const view = fakeUi();
+    await monitor.command("lang fr", view.ui);
+    await monitor.command("lang", view.ui);
+    assert.deepEqual(view.notes, [
+      { level: "warning", message: EN.usage },
+      { level: "warning", message: EN.usage },
+    ]);
+  });
+});
+
+describe("monitor: /quota config", () => {
+  it("is a settings menu: each pick applies at once, the menu comes back in the new state, until Done", async () => {
+    const { monitor, savedConfig } = setup();
+    const view = fakeUi([
+      EN.configLanguage("English"), // → language picker
+      "简体中文",
+      ZH.configPanel(false), // the menu is Chinese now: hide the panel
+      ZH.configMute("weekly", false), // mute weekly
+      ZH.configDone,
+    ]);
+    monitor.start(view.ui);
+    await monitor.idle();
+    await monitor.command("config", view.ui);
+
+    assert.deepEqual(
+      view.menus.map((menu) => menu.title),
+      ["pi-quota settings", "pi-quota language", "pi-quota 设置", "pi-quota 设置", "pi-quota 设置"],
+    );
+    assert.deepEqual(view.menus[0]?.options, [
+      "Language: English",
+      "Quota panel: shown",
+      "Alerts for five-hour: on",
+      "Alerts for weekly: on",
+      "Done",
+    ]);
+    assert.deepEqual(view.menus.at(-1)?.options, ["语言：简体中文", "配额面板：隐藏", "five-hour 提醒：开启", "weekly 提醒：已静音", "完成"]);
+    assert.deepEqual(
+      { language: savedConfig().language, hidden: savedConfig().hidden, muted: savedConfig().muted },
+      { language: "zh", hidden: true, muted: ["weekly"] },
+    );
+    assert.equal(view.widget(), undefined);
+    assert.match(view.notes.at(-1)?.message ?? "", /^语言：简体中文 · 提醒：<20% 警告 .* 静音：weekly · 面板：隐藏$/);
+  });
+
+  it("closes on cancel and still sums up the settings", async () => {
+    const { monitor } = setup();
+    const view = fakeUi([undefined]);
+    await monitor.command("config", view.ui);
+    assert.equal(view.menus.length, 1);
+    assert.match(view.notes.at(-1)?.message ?? "", /^Language: English · Alerts: warn under 20%/);
+  });
+
+  it("without a picker (no UI for it) shows the usage", async () => {
+    const { monitor } = setup();
+    const view = fakeUi();
+    await monitor.command("config", view.ui);
+    assert.deepEqual(view.notes, [{ level: "warning", message: EN.usage }]);
+  });
+});
+
+describe("monitor: commands", () => {
   it("/quota shows the full report through notify", async () => {
     const { monitor } = setup();
     const view = fakeUi();
     await monitor.command("", view.ui);
     const report = view.notes.at(-1);
     assert.equal(report?.level, "info");
-    assert.match(report?.message ?? "", /^pi-quota 配额报告/);
-    assert.match(report?.message ?? "", /节奏：/);
+    assert.match(report?.message ?? "", /^pi-quota report/);
+    assert.match(report?.message ?? "", /Pace: /);
     assert.match(report?.message ?? "", /Zhipu GLM Coding Plan/);
   });
 
@@ -301,18 +456,18 @@ describe("monitor: commands", () => {
     await monitor.command("status", view.ui);
     await monitor.command("refresh", view.ui);
     assert.equal(providers.calls["github-copilot"], 2);
-    assert.match(view.notes.at(-1)?.message ?? "", /^已刷新 · 配额：/);
+    assert.match(view.notes.at(-1)?.message ?? "", /^Refreshed · Quota: /);
   });
 
   it("/quota hide and show toggle the widget and are saved", async () => {
     const setupResult = setup();
-    const { monitor, paths, make } = setupResult;
+    const { monitor, savedConfig, make } = setupResult;
     const view = fakeUi();
     monitor.start(view.ui);
     await monitor.idle();
     await monitor.command("hide", view.ui);
     assert.equal(view.widget(), undefined);
-    assert.equal(JSON.parse(readFileSync(paths.config, "utf8")).hidden, true);
+    assert.equal(savedConfig().hidden, true);
 
     const next = make();
     const view2 = fakeUi();
@@ -323,14 +478,14 @@ describe("monitor: commands", () => {
     assert.equal(view2.widget()?.length, 2);
   });
 
-  it("an unknown or incomplete command shows the usage", async () => {
-    const { monitor } = setup();
+  it("an unknown or incomplete command shows the usage, in the user's language", async () => {
+    const { monitor } = setup({ config: { language: "zh" } });
     const view = fakeUi();
     await monitor.command("bogus", view.ui);
     await monitor.command("mute mcp-monthly", view.ui);
     assert.deepEqual(view.notes, [
-      { level: "warning", message: COMMAND_USAGE },
-      { level: "warning", message: COMMAND_USAGE },
+      { level: "warning", message: ZH.usage },
+      { level: "warning", message: ZH.usage },
     ]);
   });
 });

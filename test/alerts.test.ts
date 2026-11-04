@@ -116,7 +116,11 @@ describe("pace in warnings", () => {
     assert.equal(alert?.kind, "warning");
     if (alert?.kind !== "warning") return;
     assert.equal(alert.pace?.kind, "fast");
-    assert.equal(warningMessage(alert, NOW), "pi-quota · Zhipu 5h 窗口配额仅剩 10%，2h30m 后重置；按当前速度约 17m 后耗尽（/quota mute five-hour 可静音）");
+    assert.equal(
+      warningMessage(alert, NOW, "en"),
+      "pi-quota · Zhipu 5h window: 10% left, resets in 2h30m; at this pace it runs out in about 17m (mute: /quota mute five-hour)",
+    );
+    assert.equal(warningMessage(alert, NOW, "zh"), "pi-quota · Zhipu 5h 窗口配额仅剩 10%，2h30m 后重置；按当前速度约 17m 后耗尽（/quota mute five-hour 可静音）");
   });
 
   it("gives no run-out time early in the window", () => {
@@ -125,14 +129,24 @@ describe("pace in warnings", () => {
     const alert = alerts[0];
     assert.ok(alert?.kind === "warning" && alert.pace?.early);
     if (alert?.kind !== "warning") return;
-    assert.ok(!warningMessage(alert, NOW).includes("耗尽"));
+    assert.ok(!warningMessage(alert, NOW, "en").includes("runs out"));
+    assert.ok(!warningMessage(alert, NOW, "zh").includes("耗尽"));
   });
 
   it("says when a window is used up", () => {
     const { alerts } = evaluateAlerts([fiveHour(0)], {}, options());
     const alert = alerts[0];
     if (alert?.kind !== "warning") return assert.fail("expected a warning");
-    assert.equal(warningMessage(alert, NOW), "pi-quota · Zhipu 5h 窗口配额已用尽，2h30m 后重置（/quota mute five-hour 可静音）");
+    assert.equal(warningMessage(alert, NOW, "en"), "pi-quota · Zhipu 5h window is used up, resets in 2h30m (mute: /quota mute five-hour)");
+    assert.equal(warningMessage(alert, NOW, "zh"), "pi-quota · Zhipu 5h 窗口配额已用尽，2h30m 后重置（/quota mute five-hour 可静音）");
+  });
+
+  it("names the weekly window and its mute command", () => {
+    const weekly: QuotaRow = { provider: "zai-coding-cn", window: "weekly", percentRemaining: 18, resetsAt: at(3000) };
+    const { alerts } = evaluateAlerts([weekly], {}, options());
+    const alert = alerts[0];
+    if (alert?.kind !== "warning") return assert.fail("expected a warning");
+    assert.match(warningMessage(alert, NOW, "en"), /^pi-quota · Zhipu weekly window: 18% left, resets in 2d.*\(mute: \/quota mute weekly\)$/);
   });
 });
 
@@ -170,7 +184,11 @@ describe("Quota available", () => {
 
   it("reads like a success toast", () => {
     assert.equal(
-      recoveryMessage({ kind: "recovered", row: fiveHour(100) }),
+      recoveryMessage({ kind: "recovered", row: fiveHour(100) }, "en"),
+      "✅ Quota available · Zhipu 5h window is back to 100%",
+    );
+    assert.equal(
+      recoveryMessage({ kind: "recovered", row: fiveHour(100) }, "zh"),
       "✅ Quota available · Zhipu 5h 窗口已恢复至 100%",
     );
   });
