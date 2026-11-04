@@ -1,9 +1,10 @@
 /**
  * Where the quota panel goes in pi's TUI. Pure, so it is tested without pi's TUI.
  *
- * - "float" (default): a card at the bottom right of the chat, right above pi's editor area. It
- *   takes no rows: the chat and the editor keep their place, and the card covers only the right
- *   end of the chat's last rows, where the chat leaves the most room.
+ * - "top-right" (default) / "bottom-right": a card that floats over the chat's top right corner,
+ *   or its bottom right corner right above pi's editor area. It takes no rows: the chat and the
+ *   editor keep their place, and the card covers only the right end of a few chat rows. At the top
+ *   those rows scroll out from under it; at the bottom they are the newest ones.
  * - "inline": lines above the editor, as in 0.1 and 0.2.
  *
  * A floating card only floats while enough of the chat stays clear beside it; in a narrower or
@@ -11,9 +12,11 @@
  */
 import type { JsonValue } from "./core/json.ts";
 
-export type PanelPlacement = "float" | "inline";
-export const PANEL_PLACEMENTS: readonly PanelPlacement[] = ["float", "inline"];
-export const DEFAULT_PLACEMENT: PanelPlacement = "float";
+export type FloatingCorner = "top-right" | "bottom-right";
+export type PanelPlacement = FloatingCorner | "inline";
+export const PANEL_PLACEMENTS: readonly PanelPlacement[] = ["top-right", "bottom-right", "inline"];
+/** 0.3.x saved "float"; it is no longer a placement, so it reads as this default. */
+export const DEFAULT_PLACEMENT: PanelPlacement = "top-right";
 
 export function isPlacement(value: JsonValue | undefined): value is PanelPlacement {
   return typeof value === "string" && (PANEL_PLACEMENTS as readonly string[]).includes(value);
@@ -25,6 +28,11 @@ export const MIN_CHAT_COLUMNS = 40;
 export const MIN_FREE_ROWS = 12;
 /** Blank columns inside the card, left and right of its lines. */
 export const CARD_PADDING = 1;
+/**
+ * The top-right card's first row. Row 0 stays clear: pi-tui flashes notes such as "Copied!" at
+ * the top right of the screen.
+ */
+export const CARD_TOP = 1;
 
 /** The card's width: its widest line and the padding on both sides. */
 export function cardWidth(lineWidths: readonly number[]): number {
@@ -37,7 +45,7 @@ export function floats(
   terminal: { columns: number; rows: number },
   card: { width: number; height: number },
 ): boolean {
-  if (placement !== "float" || card.height === 0) return false;
+  if (placement === "inline" || card.height === 0) return false;
   return terminal.columns - card.width >= MIN_CHAT_COLUMNS && terminal.rows - card.height >= MIN_FREE_ROWS;
 }
 
@@ -55,13 +63,18 @@ export type ChatArea = {
 export type CardSpot = { row: number; right: number };
 
 /**
- * The card's last row is the chat's last row, right above pi's editor area, or the row above it
- * while pi shows "Jump to latest message" there. The card is flush right: a gap beside it would let
- * the end of a long chat line show through. The exception is a scrollbar that always takes the
- * last column. undefined while the chat is too short to hold the card, e.g. under a tall menu.
+ * The card's place in the chat area, flush right: a gap beside it would let the end of a long chat
+ * line show through (except for a scrollbar that always takes the last column).
+ * - top-right: from row CARD_TOP down;
+ * - bottom-right: its last row is the chat's last row, right above pi's editor area.
+ * Either way it stays off the chat's last row while pi shows "Jump to latest message" there, and
+ * it is undefined while the chat is too short to hold it (e.g. under a tall menu): the card never
+ * covers pi's editor area.
  */
-export function cardSpot(chat: ChatArea, cardHeight: number): CardSpot | undefined {
-  const row = chat.rows - (chat.scrolledUp ? 1 : 0) - cardHeight;
-  if (cardHeight <= 0 || row < 0) return undefined;
+export function cardSpot(chat: ChatArea, cardHeight: number, corner: FloatingCorner): CardSpot | undefined {
+  const rows = chat.rows - (chat.scrolledUp ? 1 : 0);
+  const top = corner === "top-right" ? CARD_TOP : 0;
+  const row = corner === "top-right" ? CARD_TOP : rows - cardHeight;
+  if (cardHeight <= 0 || row < top || row + cardHeight > rows) return undefined;
   return { row, right: chat.scrollbar === "always" ? 1 : 0 };
 }

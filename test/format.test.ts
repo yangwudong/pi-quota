@@ -11,6 +11,7 @@ import {
   fullReport,
   RESET_ICON,
   rowLine,
+  shownPercent,
   statusLine,
   widgetLines,
 } from "../src/format.ts";
@@ -193,6 +194,28 @@ describe("widget", () => {
     ).map((line) => line.tone);
     assert.deepEqual(tones, ["low", "warning", "normal"]);
   });
+
+  it("shows the share used instead of the share left when asked; the tone still follows what is left", () => {
+    const lines = widgetLines(both, reports, { nowMs: NOW, warnBelow: 20, locale: "en", percent: "used" });
+    assert.deepEqual(
+      lines.map((line) => line.text),
+      [
+        "Zhipu   5h  ▰▰▰▰▱▱▱▱▱▱  38%  ⏳ 3h12m",
+        "Zhipu   wk  ▰▰▱▱▱▱▱▱▱▱  16%  ⏳ 4d",
+        "Zhipu   mcp ▱▱▱▱▱▱▱▱▱▱   0%  ⏳ 30d",
+        "Copilot     ▰▱▱▱▱▱▱▱▱▱  10%  ⏳ 6d",
+      ],
+    );
+    // 15% left is 85% used (8.5 cells round to 9, as the bar always rounds), and still low.
+    const low = widgetLines(
+      ["zai-coding-cn"],
+      [{ provider: "zai-coding-cn", ok: true, checkedAtMs: NOW, rows: [zhipu("five-hour", 15, 4 * HOUR + 50 * MINUTE)] }],
+      { nowMs: NOW, warnBelow: 20, locale: "en", percent: "used" },
+    )[0];
+    assert.deepEqual([low?.text, low?.tone], ["Zhipu   5h  ▰▰▰▰▰▰▰▰▰▱  85%  ⏳ 4h50m", "low"]);
+    // Rounded once: 18.4% left shows as 82% used, so the two always add up to 100.
+    assert.deepEqual([shownPercent(18.4, "remaining"), shownPercent(18.4, "used")], [18, 82]);
+  });
 });
 
 describe("status line", () => {
@@ -213,6 +236,11 @@ describe("status line", () => {
       statusLine(failed, { nowMs: NOW, config: { ...ZH, muted: ["five-hour"] } }),
       "配额：Zhipu ✗ auth · Copilot 90% ⏳ 6d · 静音 five-hour",
     );
+    // Showing what is used: the same order (tightest first), with the share used.
+    assert.equal(
+      statusLine(reports, { nowMs: NOW, config: { ...DEFAULT_CONFIG, percent: "used" } }),
+      "Quota: Zhipu 5h 38% ⏳ 3h12m · Zhipu wk 16% ⏳ 4d · Copilot 10% ⏳ 6d · Zhipu mcp 0% ⏳ 30d",
+    );
   });
 });
 
@@ -228,7 +256,7 @@ describe("full report", () => {
     assert.ok(lines.some((line) => line.includes("0/1,000")));
     assert.ok(lines.some((line) => line.startsWith("GitHub Copilot · business")));
     assert.ok(lines.some((line) => line.includes("2,404/25,000 AI credits")));
-    assert.equal(lines.at(-1), 'Alerts: warn under 20% · "Quota available" back at ≥50% · muted: none · panel: floating');
+    assert.equal(lines.at(-1), 'Alerts: warn under 20% · "Quota available" back at ≥50% · muted: none · panel: floating, top right · percent: left');
   });
 
   it("is the same report in Chinese", () => {
@@ -237,8 +265,18 @@ describe("full report", () => {
     assert.equal(lines[0], `pi-quota 配额报告 · ${clockTime(NOW, NOW)}`);
     assert.equal(lines[2], `  5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ ${fiveHourReset}（3h 12m）`);
     assert.equal(lines[3], "        节奏：正常（均匀线 64%）");
-    assert.equal(lines.at(-1), "提醒：<20% 警告 · 回到 ≥50% 发 Quota available · 静音：无 · 面板：悬浮（右下）");
-    assert.match(fullReport(both, reports, { nowMs: NOW, config: { ...ZH, placement: "inline" } }).at(-1) ?? "", /面板：编辑器上方$/);
+    assert.equal(lines.at(-1), "提醒：<20% 警告 · 回到 ≥50% 发 Quota available · 静音：无 · 面板：悬浮（右上） · 显示：剩余");
+    assert.match(fullReport(both, reports, { nowMs: NOW, config: { ...ZH, placement: "inline" } }).at(-1) ?? "", /面板：编辑器上方 · /);
+    assert.match(fullReport(both, reports, { nowMs: NOW, config: { ...ZH, placement: "bottom-right" } }).at(-1) ?? "", /面板：悬浮（右下） · /);
+  });
+
+  it("shows the share used when asked, in the bar and the percent; counts and alerts stay as they are", () => {
+    const used: QuotaConfig = { ...DEFAULT_CONFIG, percent: "used" };
+    const lines = fullReport(both, reports, { nowMs: NOW, config: used });
+    assert.equal(lines[2], `  5h  ▰▰▰▰▱▱▱▱▱▱  38%  ⏳ ${clockTime(NOW + 3 * HOUR + 12 * MINUTE, NOW)} (3h 12m)`);
+    assert.ok(lines.some((line) => line.includes("10%  2,404/25,000 AI credits")), "Copilot: 90% left is 10% used");
+    assert.match(lines.at(-1) ?? "", / · percent: used$/);
+    assert.match(fullReport(both, reports, { nowMs: NOW, config: { ...used, language: "zh" } }).at(-1) ?? "", / · 显示：已用$/);
   });
 
   it("shows an error with the provider's words and the hint, and muted windows", () => {

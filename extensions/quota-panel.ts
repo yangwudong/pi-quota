@@ -1,11 +1,12 @@
 /**
  * The quota panel in pi's TUI.
  *
- * - Floating (default): a card at the bottom right of the chat, right above pi's editor area, drawn
- *   as a pi-tui overlay that takes no rows and no keyboard input (`nonCapturing`): the chat and the
- *   editor keep their place. It sits on the chat's last row, so it moves up with pi's editor area
- *   when the input grows or a status line or a menu opens, and one row more while pi shows "Jump to
- *   latest message" on that row.
+ * - Floating (default): a card at the top right (default) or the bottom right of the chat, drawn as
+ *   a pi-tui overlay that takes no rows and no keyboard input (`nonCapturing`): the chat and the
+ *   editor keep their place. At the top right, chat rows under it scroll out from under it. At the
+ *   bottom right it sits on the chat's last row, right above pi's editor area, so it moves up with
+ *   that area when the input grows or a status line or a menu opens. Either way it keeps off the
+ *   chat's last row while pi shows "Jump to latest message" there.
  * - Inline: lines above the editor (`/quota config` → quota panel), and the fallback whenever the
  *   card cannot float: a terminal too narrow or short, pi's regular mode, or a pi-tui without the
  *   chat accessor below.
@@ -97,7 +98,7 @@ function chatViewOf(tui: TUI): ChatView | undefined {
 
 class QuotaPanel implements Component {
   #lines: readonly DisplayLine[] = [];
-  #placement: PanelPlacement = "float";
+  #placement: PanelPlacement = "top-right";
   #disposed = false;
   /** Set by render() for the frame being drawn. */
   #floating = false;
@@ -119,7 +120,7 @@ class QuotaPanel implements Component {
     this.#paint = paintWith(theme);
     this.#canFloat = isViewportTUI(tui) && hasChatAccessor(tui);
     this.#card = {
-      render: (width) => cardLines(this.#lines, this.#paint, width),
+      render: (width: number) => cardLines(this.#lines, this.#paint, width),
       invalidate: () => {},
     };
     const width = () => this.#width();
@@ -154,7 +155,7 @@ class QuotaPanel implements Component {
 
   /** The overlay exists only while floating is chosen: pi switches TUI modes only without one. */
   #syncOverlay(): void {
-    const wanted = this.#canFloat && !this.#disposed && this.#placement === "float";
+    const wanted = this.#canFloat && !this.#disposed && this.#placement !== "inline";
     if (wanted && !this.#overlay) this.#overlay = this.#tui.showOverlay(this.#card, this.#options);
     if (!wanted && this.#overlay) {
       this.#overlay.hide();
@@ -174,12 +175,15 @@ class QuotaPanel implements Component {
   /** Asked while overlays are composited, after the layout pass has sized the chat for the frame. */
   #visible(): boolean {
     const chat = this.#drawing && this.#floating ? this.#chatView() : undefined;
-    this.#spot = chat
-      ? cardSpot(
-          { rows: chat.viewportHeight, scrolledUp: chat.followEnd && !chat.isFollowingEnd, scrollbar: chat.scrollbar },
-          this.#lines.length,
-        )
-      : undefined;
+    const corner = this.#placement === "inline" ? undefined : this.#placement;
+    this.#spot =
+      chat && corner
+        ? cardSpot(
+            { rows: chat.viewportHeight, scrolledUp: chat.followEnd && !chat.isFollowingEnd, scrollbar: chat.scrollbar },
+            this.#lines.length,
+            corner,
+          )
+        : undefined;
     return this.#spot !== undefined;
   }
 
@@ -235,7 +239,7 @@ export function createPanelHost(): PanelHost {
         panel.update(lines, placement);
         return;
       }
-      ctx.ui.setWidget(WIDGET_KEY, (tui, theme) => {
+      ctx.ui.setWidget(WIDGET_KEY, (tui: TUI, theme: Theme) => {
         const created = new QuotaPanel(tui, theme);
         created.update(lines, placement);
         panel = created;

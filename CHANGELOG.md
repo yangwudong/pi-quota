@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0] - 2026-11-04
+
+- **Choose the floating corner**: `/quota config` → *Quota panel* now cycles floating top right /
+  floating bottom right / above the editor / hidden. **Top right is the default again**: chat rows
+  under the card there scroll out from under it, while at the bottom right they are the newest
+  lines. A 0.3 `"placement": "float"` reads as top right; pick bottom right once to keep 0.3.1's
+  place.
+- **Percent shown: left or used**: `/quota config` → *Percent shown* switches the panel,
+  `/quota status` and the `/quota` report between the share left (default) and the share used
+  (`"percent": "used"` in `config.json`). Colors, `⚠ fast` and the alerts still go by what is left.
+
 ## [0.3.1] - 2026-11-04
 
 - **The floating card sits at the bottom right, just above the editor**, instead of the top right:

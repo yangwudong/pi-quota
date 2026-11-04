@@ -54,8 +54,16 @@ export type WarningParts = {
   window: AlertWindow;
 };
 
-/** The quota panel as the settings show it: floating, above the editor, or hidden. */
-export type PanelState = "float" | "inline" | "hidden";
+/** The quota panel as the settings show it: floating at a corner, above the editor, or hidden. */
+export type PanelState = "top-right" | "bottom-right" | "inline" | "hidden";
+
+/** What the panel's percent and bar show: the share left (default) or the share used. */
+export type PercentShown = "remaining" | "used";
+export const PERCENTS_SHOWN: readonly PercentShown[] = ["remaining", "used"];
+
+export function isPercentShown(value: JsonValue | undefined): value is PercentShown {
+  return typeof value === "string" && (PERCENTS_SHOWN as readonly string[]).includes(value);
+}
 
 /** The parts of the alert-settings line of the full report. */
 export type SettingsParts = {
@@ -63,6 +71,7 @@ export type SettingsParts = {
   recoverAt: number;
   muted: readonly string[];
   panel: PanelState;
+  percent: PercentShown;
 };
 
 export type Messages = {
@@ -108,9 +117,10 @@ export type Messages = {
   languageTitle: string;
   configTitle: string;
   configLanguage(name: string): string;
-  /** The panel's state in words: "floating", "above the editor", "hidden". */
+  /** The panel's state in words: "floating, top right", "above the editor", "hidden". */
   panelStates: Readonly<Record<PanelState, string>>;
   configPanel(panel: PanelState): string;
+  configPercent(percent: PercentShown): string;
   configMute(window: AlertWindow, muted: boolean): string;
   configDone: string;
   /** The `/` menu: the command's own line, and one per argument. */
@@ -118,8 +128,20 @@ export type Messages = {
   argument: Readonly<Record<string, string>>;
 };
 
-const EN_PANEL: Readonly<Record<PanelState, string>> = { float: "floating", inline: "above the editor", hidden: "hidden" };
-const ZH_PANEL: Readonly<Record<PanelState, string>> = { float: "悬浮（右下）", inline: "编辑器上方", hidden: "隐藏" };
+const EN_PANEL: Readonly<Record<PanelState, string>> = {
+  "top-right": "floating, top right",
+  "bottom-right": "floating, bottom right",
+  inline: "above the editor",
+  hidden: "hidden",
+};
+const ZH_PANEL: Readonly<Record<PanelState, string>> = {
+  "top-right": "悬浮（右上）",
+  "bottom-right": "悬浮（右下）",
+  inline: "编辑器上方",
+  hidden: "隐藏",
+};
+const EN_PERCENT: Readonly<Record<PercentShown, string>> = { remaining: "left", used: "used" };
+const ZH_PERCENT: Readonly<Record<PercentShown, string>> = { remaining: "剩余", used: "已用" };
 
 const en: Messages = {
   checking: "… checking",
@@ -151,7 +173,7 @@ const en: Messages = {
   reportMuted: "[muted]",
   resetAt: (time, countdown) => `${time} (${countdown})`,
   reportSettings: (p) =>
-    `Alerts: warn under ${p.warnBelow}% · "Quota available" back at ≥${p.recoverAt}% · muted: ${p.muted.length > 0 ? p.muted.join(", ") : "none"} · panel: ${EN_PANEL[p.panel]}`,
+    `Alerts: warn under ${p.warnBelow}% · "Quota available" back at ≥${p.recoverAt}% · muted: ${p.muted.length > 0 ? p.muted.join(", ") : "none"} · panel: ${EN_PANEL[p.panel]} · percent: ${EN_PERCENT[p.percent]}`,
   paceSpare: (even) => `Pace: spare (even use ${even}%)`,
   paceOnTrack: (even) => `Pace: on track (even use ${even}%)`,
   paceEarly: (even) => `Pace: fast, too early in the window to forecast (even use ${even}%)`,
@@ -178,6 +200,7 @@ const en: Messages = {
   configLanguage: (name) => `Language: ${name}`,
   panelStates: EN_PANEL,
   configPanel: (panel) => `Quota panel: ${EN_PANEL[panel]}`,
+  configPercent: (percent) => `Percent shown: ${EN_PERCENT[percent]}`,
   configMute: (window, isMuted) => `Alerts for ${window}: ${isMuted ? "muted" : "on"}`,
   configDone: "Done",
   commandDescription: "Quota of Zhipu GLM Coding Plan and GitHub Copilot: report, status, settings",
@@ -225,7 +248,7 @@ const zh: Messages = {
   reportMuted: "[静音]",
   resetAt: (time, countdown) => `${time}（${countdown}）`,
   reportSettings: (p) =>
-    `提醒：<${p.warnBelow}% 警告 · 回到 ≥${p.recoverAt}% 发 Quota available · 静音：${p.muted.length > 0 ? p.muted.join(", ") : "无"} · 面板：${ZH_PANEL[p.panel]}`,
+    `提醒：<${p.warnBelow}% 警告 · 回到 ≥${p.recoverAt}% 发 Quota available · 静音：${p.muted.length > 0 ? p.muted.join(", ") : "无"} · 面板：${ZH_PANEL[p.panel]} · 显示：${ZH_PERCENT[p.percent]}`,
   paceSpare: (even) => `节奏：有富余（均匀线 ${even}%）`,
   paceOnTrack: (even) => `节奏：正常（均匀线 ${even}%）`,
   paceEarly: (even) => `节奏：偏快，窗口刚开始暂不预测（均匀线 ${even}%）`,
@@ -252,6 +275,7 @@ const zh: Messages = {
   configLanguage: (name) => `语言：${name}`,
   panelStates: ZH_PANEL,
   configPanel: (panel) => `配额面板：${ZH_PANEL[panel]}`,
+  configPercent: (percent) => `显示：${ZH_PERCENT[percent]}`,
   configMute: (window, isMuted) => `${window} 提醒：${isMuted ? "已静音" : "开启"}`,
   configDone: "完成",
   commandDescription: "智谱 GLM Coding Plan 与 GitHub Copilot 配额：报告、摘要、设置",

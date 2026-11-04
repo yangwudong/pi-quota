@@ -4,7 +4,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@jack-yang/pi-quota)](https://www.npmjs.com/package/@jack-yang/pi-quota) [![license](https://img.shields.io/npm/l/@jack-yang/pi-quota)](./LICENSE) [![CI](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml/badge.svg)](https://github.com/yangwudong/pi-quota/actions/workflows/ci.yml) ![pi](https://img.shields.io/badge/pi-%E2%89%A5%201.5.0-blue)
 
-为 [pi coding agent](https://pi.dev) 盯住订阅配额的扩展：**智谱 GLM Coding Plan（国区，`zai-coding-cn`）** 的 5 小时 / 周 / MCP 月度窗口，以及 **GitHub Copilot** 的 AI credits。余量悬浮显示在对话区右下角、紧贴编辑器上方，不占行；窗口快用完时主动警告，并按当前速度预测耗尽时间；窗口重置恢复后通知你 “Quota available”。
+为 [pi coding agent](https://pi.dev) 盯住订阅配额的扩展：**智谱 GLM Coding Plan（国区，`zai-coding-cn`）** 的 5 小时 / 周 / MCP 月度窗口，以及 **GitHub Copilot** 的 AI credits。余量悬浮显示在对话区右上角（也可选右下角、紧贴编辑器上方），不占行；窗口快用完时主动警告，并按当前速度预测耗尽时间；窗口重置恢复后通知你 “Quota available”。
 
 > 配额是订阅制的硬约束：插件替你盯着，在关键时刻提醒，而不是等你想起来去查。
 
@@ -14,18 +14,25 @@
 
 ## 显示效果
 
-`/quota` 完整报告（中文界面，示例数据；只显示给你，不进入对话上下文）。配额面板悬浮在右下角、编辑器上方，不占用任何行：
+`/quota` 完整报告（中文界面，示例数据；只显示给你，不进入对话上下文）。配额面板悬浮在右上角，不占用任何行：
 
-![/quota 完整报告：各窗口余量、用量、重置时间与节奏分析；右下角、编辑器上方是悬浮的配额面板，provider 名为蓝色](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-report-zh.png)
+![/quota 完整报告：各窗口余量、用量、重置时间与节奏分析；右上角是悬浮的配额面板，provider 名为蓝色](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-report-zh.png)
 
 `/quota config` 设置菜单（英文界面）：
 
-![/quota config：语言、配额面板（悬浮 / 编辑器上方 / 隐藏）、5h 与周窗口的提醒开关](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-config.png)
+![/quota config：语言、配额面板（右上 / 右下悬浮、编辑器上方、隐藏）、显示剩余或已用、5h 与周窗口的提醒开关](https://raw.githubusercontent.com/yangwudong/pi-quota/main/docs/screenshot-config.png)
 
-- **默认悬浮**：面板压在对话区最后几行的右侧、紧贴编辑器上方，不占行、不抢键盘输入。输入变成多行、打开菜单时跟着编辑器上移；pi 显示 “Jump to latest message” 时再上移一行让出这行提示。终端太窄（旁边留不出 40 列对话）或太矮时，自动回到编辑器上方，有空间时再浮起来。`/quota config` → 配额面板，可在 悬浮 / 编辑器上方 / 隐藏 之间切换。
+- **默认悬浮**，不占行、不抢键盘输入。`/quota config` → 配额面板，依次切换：
+  - **悬浮（右上）**（默认）：压在屏幕上最旧的几行上，被盖住的内容滚动一下就能看到；
+  - **悬浮（右下）**：压在对话区最后几行、紧贴编辑器上方，输入变成多行、打开菜单时跟着上移；它盖住的是最新几行的右半部分，滚动也没法把它们移出来；
+  - **编辑器上方**：单独占几行，和 0.3 之前一样；
+  - **隐藏**。
+
+  悬浮时，pi 在对话区最后一行显示 “Jump to latest message” 时会让出这一行。终端太窄（旁边留不出 40 列对话）或太矮时，自动回到编辑器上方，有空间时再浮起来。
+- **显示剩余或已用**：`/quota config` → 显示，在 **剩余**（默认）和 **已用** 之间切换，对面板、`/quota status` 和 `/quota` 报告都生效：剩余 18% 就显示为已用 `▰▰▰▰▰▰▰▰▱▱  82%`。颜色、`⚠ 快于正常` 和提醒始终按剩余量判断。
 - provider 名（`Zhipu`、`Copilot`）为蓝色（`#008AFA`）；不支持真彩色的终端由 pi 换成最接近的 256 色。
 - 每个 provider 最多 3 行：5 小时窗口（`5h`）、周窗口（`wk`）、MCP 月度配额（`mcp`）。套餐里没有的窗口不显示。
-- 每行依次是 10 格条形图、剩余百分比，`⏳` 后是距重置的倒计时（`14m` / `3h12m` / `4d`）。
+- 每行依次是 10 格条形图、百分比（剩余或已用），`⏳` 后是距重置的倒计时（`14m` / `3h12m` / `4d`）。
 - 用量快于均匀节奏、且窗口已过去 10% 以上时，行尾显示 `⚠ 快于正常`。
 - 没有配置凭据的 provider 不显示。凭据有误或请求失败时，该行显示简短原因，如 `Zhipu   ✗ auth`、`Zhipu   ✗ timeout`，另一个 provider 照常显示。
 
@@ -70,7 +77,7 @@ pi -e npm:@jack-yang/pi-quota          # 只在本次启动试用，不写入 se
 | `/quota` | 完整报告：各窗口余量、用量、重置时间（本地时间 + 倒计时）、节奏（pace）分析、提醒设置 |
 | `/quota status` | 单行摘要，最紧张的窗口排在最前（出错的 provider 排在最前面） |
 | `/quota refresh` | 清缓存，立即重查 |
-| `/quota config` | 设置菜单：语言、配额面板（悬浮 / 编辑器上方 / 隐藏）、各窗口提醒；选中即生效 |
+| `/quota config` | 设置菜单：语言、配额面板（右上 / 右下 / 编辑器上方 / 隐藏）、显示（剩余 / 已用）、各窗口提醒；选中即生效 |
 | `/quota lang [en\|zh]` | 设置语言；不带参数时弹出选择列表 |
 | `/quota mute <five-hour\|weekly>` | 静音该窗口，不再发它的警告和 “Quota available”（也可写 `5h` / `wk`） |
 | `/quota unmute <five-hour\|weekly>` | 取消静音 |
@@ -92,7 +99,8 @@ pi -e npm:@jack-yang/pi-quota          # 只在本次启动试用，不写入 se
 ```json
 {
   "language": "zh",
-  "placement": "float",
+  "placement": "top-right",
+  "percent": "remaining",
   "hidden": false,
   "muted": ["five-hour"],
   "warnBelow": 20,
@@ -103,7 +111,8 @@ pi -e npm:@jack-yang/pi-quota          # 只在本次启动试用，不写入 se
 | 字段 | 默认 | 含义 |
 |---|---|---|
 | `language` | `"en"` | `"en"` 或 `"zh"`（`/quota lang`、`/quota config`） |
-| `placement` | `"float"` | `"float"`：右下角、编辑器上方悬浮；`"inline"`：编辑器上方（`/quota config`） |
+| `placement` | `"top-right"` | `"top-right"` / `"bottom-right"`：在对话区右上 / 右下角悬浮；`"inline"`：编辑器上方（`/quota config`）。0.3 的 `"float"` 按 `"top-right"` 读取 |
+| `percent` | `"remaining"` | 面板、单行摘要和报告显示什么：`"remaining"`（剩余）或 `"used"`（已用，`/quota config`） |
 | `hidden` | `false` | 面板是否隐藏（`/quota hide\|show`） |
 | `muted` | `[]` | 已静音的窗口（`/quota mute\|unmute`） |
 | `warnBelow` | `20` | 剩余低于这个百分比时警告，取值 (0, 100] |
@@ -135,7 +144,7 @@ pi -e npm:@jack-yang/pi-quota          # 只在本次启动试用，不写入 se
 ## 已知限制
 
 - Copilot 月度额度和 MCP 只显示、不提醒。
-- 悬浮面板画在对话上层，不是画在旁边：它会盖住对话区最后 4 行的右半部分，而最新的内容正好出现在那里；要看被盖住的字，可以滚动对话，或在 `/quota config` 里改为“编辑器上方”。只在 pi 的全屏模式（默认）下悬浮；`--tui-mode regular` 时面板在编辑器上方。
+- 悬浮面板画在对话上层，不是画在旁边：它会盖住 4 行对话的右半部分。在右上角时，这些行滚动一下就能看到；在右下角时，它们是最新的几行，常看长回复就在 `/quota config` 里选“右上”或“编辑器上方”。只在 pi 的全屏模式（默认）下悬浮；`--tui-mode regular` 时面板在编辑器上方。
 - 面板悬浮时，pi 的 `/settings` 无法切换 TUI 模式（只要有 overlay，pi 就会拒绝并提示 “Close active overlays before changing TUI mode”）。先 `/quota hide`，切换后再 `/quota show`，或改为“编辑器上方”。
 - Copilot 和 MCP 没有固定的窗口长度，所以不计算节奏（pace）；智谱也不返回窗口起点，起点用 “重置时间 − 窗口长度” 推算。
 - 已发提醒的记录是一个小文件，读写时不加锁：多个 pi 会话恰好同时检查时，有极小概率重复一次提醒。

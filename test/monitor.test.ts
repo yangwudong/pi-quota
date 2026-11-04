@@ -401,7 +401,9 @@ describe("monitor: /quota config", () => {
     const view = fakeUi([
       EN.configLanguage("English"), // → language picker
       "简体中文",
-      ZH.configPanel("float"), // the menu is Chinese now: floating → above the editor
+      ZH.configPanel("top-right"), // the menu is Chinese now: top right → bottom right
+      ZH.configPanel("bottom-right"), // bottom right → above the editor
+      ZH.configPercent("remaining"), // percent left → used
       ZH.configMute("weekly", false), // mute weekly
       ZH.configDone,
     ]);
@@ -411,11 +413,12 @@ describe("monitor: /quota config", () => {
 
     assert.deepEqual(
       view.menus.map((menu) => menu.title),
-      ["pi-quota settings", "pi-quota language", "pi-quota 设置", "pi-quota 设置", "pi-quota 设置"],
+      ["pi-quota settings", "pi-quota language", "pi-quota 设置", "pi-quota 设置", "pi-quota 设置", "pi-quota 设置", "pi-quota 设置"],
     );
     assert.deepEqual(view.menus[0]?.options, [
       "Language: English",
-      "Quota panel: floating",
+      "Quota panel: floating, top right",
+      "Percent shown: left",
       "Alerts for five-hour: on",
       "Alerts for weekly: on",
       "Done",
@@ -423,37 +426,52 @@ describe("monitor: /quota config", () => {
     assert.deepEqual(view.menus.at(-1)?.options, [
       "语言：简体中文",
       "配额面板：编辑器上方",
+      "显示：已用",
       "five-hour 提醒：开启",
       "weekly 提醒：已静音",
       "完成",
     ]);
     assert.deepEqual(
-      { language: savedConfig().language, placement: savedConfig().placement, hidden: savedConfig().hidden, muted: savedConfig().muted },
-      { language: "zh", placement: "inline", hidden: false, muted: ["weekly"] },
+      {
+        language: savedConfig().language,
+        placement: savedConfig().placement,
+        percent: savedConfig().percent,
+        hidden: savedConfig().hidden,
+        muted: savedConfig().muted,
+      },
+      { language: "zh", placement: "inline", percent: "used", hidden: false, muted: ["weekly"] },
     );
-    // The panel moved at once: the UI was told to put it above the editor.
+    // The panel moved at once: the UI was told to put it above the editor, showing what is used.
     assert.equal(view.placements.at(-1), "inline");
     assert.equal(view.widget()?.length, 2);
-    assert.match(view.notes.at(-1)?.message ?? "", /^语言：简体中文 · 提醒：<20% 警告 .* 静音：weekly · 面板：编辑器上方$/);
+    assert.match(view.notes.at(-1)?.message ?? "", /^语言：简体中文 · 提醒：<20% 警告 .* 静音：weekly · 面板：编辑器上方 · 显示：已用$/);
   });
 
-  it("cycles the panel: floating → above the editor → hidden → floating", async () => {
+  it("cycles the panel: top right → bottom right → above the editor → hidden → top right", async () => {
     const { monitor, savedConfig } = setup();
     const view = fakeUi([
-      EN.configPanel("float"),
+      EN.configPanel("top-right"),
+      EN.configPanel("bottom-right"),
       EN.configPanel("inline"),
       EN.configPanel("hidden"),
       EN.configDone,
     ]);
     monitor.start(view.ui);
     await monitor.idle();
-    assert.equal(view.placements.at(-1), "float");
+    assert.equal(view.placements.at(-1), "top-right");
     await monitor.command("config", view.ui);
     assert.deepEqual(
       view.menus.map((menu) => menu.options[1]),
-      ["Quota panel: floating", "Quota panel: above the editor", "Quota panel: hidden", "Quota panel: floating"],
+      [
+        "Quota panel: floating, top right",
+        "Quota panel: floating, bottom right",
+        "Quota panel: above the editor",
+        "Quota panel: hidden",
+        "Quota panel: floating, top right",
+      ],
     );
-    assert.deepEqual({ placement: savedConfig().placement, hidden: savedConfig().hidden }, { placement: "float", hidden: false });
+    assert.deepEqual({ placement: savedConfig().placement, hidden: savedConfig().hidden }, { placement: "top-right", hidden: false });
+    assert.ok(view.placements.includes("bottom-right"), "the bottom right was offered to the UI");
     // While hidden there was no panel; floating again, it is back.
     assert.ok(view.widgets.includes(undefined));
     assert.equal(view.widget()?.length, 2);

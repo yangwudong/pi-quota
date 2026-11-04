@@ -8,7 +8,7 @@ import { type Pace, paceOf } from "./core/pace.ts";
 import type { QuotaConfig } from "./core/store.ts";
 import type { ProviderId, ProviderReport, QuotaError, QuotaRow } from "./core/types.ts";
 import { WINDOWS } from "./core/windows.ts";
-import { type Locale, type Messages, messages, type PanelState } from "./i18n.ts";
+import { type Locale, type Messages, messages, type PanelState, type PercentShown } from "./i18n.ts";
 
 export const PROVIDER_NAMES: Readonly<Record<ProviderId, string>> = {
   "zai-coding-cn": "Zhipu",
@@ -36,10 +36,21 @@ export function displayPercent(percent: number): number {
   return Math.max(0, Math.min(100, Math.round(percent)));
 }
 
-/** A bar of `width` cells: ▰ for the share left, ▱ for the rest. */
+/** A bar of `width` cells: ▰ for the share given (left, or used), ▱ for the rest. */
 export function bar(percent: number, width = 10): string {
   const filled = Math.round((displayPercent(percent) / 100) * width);
   return "▰".repeat(filled) + "▱".repeat(width - filled);
+}
+
+/** The percent to show of a row: what is left (as reported), or what is used. */
+export function shownPercent(percentRemaining: number, shown: PercentShown): number {
+  return shown === "used" ? 100 - displayPercent(percentRemaining) : displayPercent(percentRemaining);
+}
+
+/** "▰▰▰▰▰▰▱▱▱▱  62%": a row's bar and percent as `shown` says. */
+function barAndPercent(row: QuotaRow, shown: PercentShown): string {
+  const percent = shownPercent(row.percentRemaining, shown);
+  return `${bar(percent)} ${`${percent}%`.padStart(4)}`;
 }
 
 /**
@@ -140,17 +151,16 @@ function namePart(provider: ProviderId): string {
 }
 
 /** "Zhipu   5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ 3h12m  ⚠ fast" */
-export function rowLine(row: QuotaRow, nowMs: number, locale: Locale): string {
-  return `${namePart(row.provider)}${rowRest(row, nowMs, locale)}`;
+export function rowLine(row: QuotaRow, nowMs: number, locale: Locale, shown: PercentShown = "remaining"): string {
+  return `${namePart(row.provider)}${rowRest(row, nowMs, locale, shown)}`;
 }
 
 /** A window's line without the provider name: "5h  ▰▰▰▰▰▰▱▱▱▱  62%  ⏳ 3h12m". */
-function rowRest(row: QuotaRow, nowMs: number, locale: Locale): string {
+function rowRest(row: QuotaRow, nowMs: number, locale: Locale, shown: PercentShown): string {
   const window = (row.window ? WINDOWS[row.window].short : "").padEnd(WINDOW_WIDTH);
-  const percent = `${displayPercent(row.percentRemaining)}%`.padStart(4);
   const reset = resetMark(formatResetCountdown(row.resetsAt, nowMs));
   const fast = isFast(paceOf(row, nowMs)) ? `  ${messages(locale).fastMark}` : "";
-  return `${window}${bar(row.percentRemaining)} ${percent}${reset ? `  ${reset}` : ""}${fast}`;
+  return `${window}${barAndPercent(row, shown)}${reset ? `  ${reset}` : ""}${fast}`;
 }
 
 /** At most this many lines per provider (5h, weekly, MCP). */
@@ -169,14 +179,16 @@ function noteText(report: Extract<ProviderReport, { ok: true }>, m: Messages): s
 /**
  * The resident widget: each provider's windows, its error ("Zhipu   ✗ auth"), its note when it
  * has no percent, or "checking" before its first answer. Providers without a credential are left
- * out; with none configured the widget is empty.
+ * out; with none configured the widget is empty. `percent` picks left or used; the tone always
+ * follows what is left.
  */
 export function widgetLines(
   providers: readonly ProviderId[],
   reports: readonly ProviderReport[] | undefined,
-  options: { nowMs: number; warnBelow: number; locale: Locale },
+  options: { nowMs: number; warnBelow: number; locale: Locale; percent?: PercentShown },
 ): DisplayLine[] {
   const m = messages(options.locale);
+  const shown = options.percent ?? "remaining";
   return providers.flatMap((provider): DisplayLine[] => {
     const report = reports?.find((item) => item.provider === provider);
     if (!report) return [displayLine(provider, m.checking, "normal")];
@@ -186,7 +198,7 @@ export function widgetLines(
     return report.rows
       .slice(0, MAX_ROWS_PER_PROVIDER)
       .map((row) =>
-        displayLine(provider, rowRest(row, options.nowMs, options.locale), rowTone(row, paceOf(row, options.nowMs), options.warnBelow)),
+        displayLine(provider, rowRest(row, options.nowMs, options.locale, shown), rowTone(row, paceOf(row, options.nowMs), options.warnBelow)),
       );
   });
 }
@@ -218,7 +230,7 @@ export function statusLine(
       const fast = isFast(paceOf(row, options.nowMs)) ? " ⚠" : "";
       parts.push({
         rank: row.percentRemaining,
-        text: `${shortName(row)} ${displayPercent(row.percentRemaining)}%${reset ? ` ${reset}` : ""}${fast}`,
+        text: `${shortName(row)} ${shownPercent(row.percentRemaining, config.percent)}%${reset ? ` ${reset}` : ""}${fast}`,
       });
     }
   }
@@ -262,14 +274,13 @@ function amountText(row: QuotaRow): string {
 /** One window of the full report, then its pace analysis when it has one. */
 function reportRow(row: QuotaRow, nowMs: number, config: QuotaConfig, m: Messages): string[] {
   const window = (row.window ? WINDOWS[row.window].short : "").padEnd(WINDOW_WIDTH);
-  const percent = `${displayPercent(row.percentRemaining)}%`.padStart(4);
   const amount = amountText(row);
   const resetMs = Date.parse(row.resetsAt ?? "");
   const reset = Number.isFinite(resetMs)
     ? `  ${RESET_ICON} ${m.resetAt(clockTime(resetMs, nowMs), formatResetCountdown(row.resetsAt, nowMs, "exact"))}`
     : "";
   const muted = row.window && (config.muted as readonly string[]).includes(row.window) ? `  ${m.reportMuted}` : "";
-  const lines = [`  ${window}${bar(row.percentRemaining)} ${percent}${amount ? `  ${amount}` : ""}${reset}${muted}`];
+  const lines = [`  ${window}${barAndPercent(row, config.percent)}${amount ? `  ${amount}` : ""}${reset}${muted}`];
   const pace = paceText(paceOf(row, nowMs), config.language);
   if (pace) lines.push(`        ${pace}`);
   return lines;
@@ -307,18 +318,19 @@ export function fullReport(
   return lines;
 }
 
-/** The panel as the settings name it: floating, above the editor, or hidden. */
+/** The panel as the settings name it: floating at a corner, above the editor, or hidden. */
 export function panelState(config: QuotaConfig): PanelState {
   return config.hidden ? "hidden" : config.placement;
 }
 
-/** The alert settings in one line: thresholds, muted windows, the panel. */
+/** The alert settings in one line: thresholds, muted windows, the panel, the percent shown. */
 export function settingsLine(config: QuotaConfig): string {
   return messages(config.language).reportSettings({
     warnBelow: config.warnBelow,
     recoverAt: config.recoverAt,
     muted: config.muted,
     panel: panelState(config),
+    percent: config.percent,
   });
 }
 

@@ -43,6 +43,8 @@ import {
   type Messages,
   messages,
   type PanelState,
+  PERCENTS_SHOWN,
+  type PercentShown,
   parseLocale,
 } from "./i18n.ts";
 
@@ -107,14 +109,19 @@ const WINDOW_ALIASES: Readonly<Record<string, AlertWindow>> = { "5h": "five-hour
 
 /** The settings that make each panel state, in the order `/quota config` cycles them. */
 const PANEL_STATES: Readonly<Record<PanelState, Pick<QuotaConfig, "hidden" | "placement">>> = {
-  float: { hidden: false, placement: "float" },
+  "top-right": { hidden: false, placement: "top-right" },
+  "bottom-right": { hidden: false, placement: "bottom-right" },
   inline: { hidden: false, placement: "inline" },
-  hidden: { hidden: true, placement: "float" },
+  hidden: { hidden: true, placement: "top-right" },
 };
-const PANEL_CYCLE: readonly PanelState[] = ["float", "inline", "hidden"];
+const PANEL_CYCLE: readonly PanelState[] = ["top-right", "bottom-right", "inline", "hidden"];
 
 function nextPanelState(state: PanelState): PanelState {
-  return PANEL_CYCLE[(PANEL_CYCLE.indexOf(state) + 1) % PANEL_CYCLE.length] ?? "float";
+  return PANEL_CYCLE[(PANEL_CYCLE.indexOf(state) + 1) % PANEL_CYCLE.length] ?? "top-right";
+}
+
+function nextPercentShown(shown: PercentShown): PercentShown {
+  return PERCENTS_SHOWN[(PERCENTS_SHOWN.indexOf(shown) + 1) % PERCENTS_SHOWN.length] ?? "remaining";
 }
 
 function parseWindow(word: string): AlertWindow | undefined {
@@ -202,6 +209,7 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
         nowMs: now(),
         warnBelow: config.warnBelow,
         locale: config.language,
+        percent: config.percent,
       });
       // Nothing configured: no panel at all rather than an empty one.
       current.showPanel(lines.length === 0 ? undefined : lines, config.placement);
@@ -372,6 +380,10 @@ export function createMonitor(options: MonitorOptions): QuotaMonitor {
         {
           label: w.configPanel(panelState(config)),
           apply: () => updateConfig((settings) => ({ ...settings, ...PANEL_STATES[nextPanelState(panelState(settings))] })),
+        },
+        {
+          label: w.configPercent(config.percent),
+          apply: () => updateConfig((settings) => ({ ...settings, percent: nextPercentShown(settings.percent) })),
         },
         ...ALERT_WINDOWS.map((window) => {
           const isMuted = config.muted.includes(window);
